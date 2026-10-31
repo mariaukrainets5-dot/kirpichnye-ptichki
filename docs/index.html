@@ -697,7 +697,7 @@ function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;
 const SHEETS=['cherepaha','osminog','kozlik','orlenok','ezhik','mysh','koshey','zayka','medved','slon','zhiraf','lisa','snegir','flamingo','pavlin','zhar','edinorog','drakon','hero','barmaley-full'];
 const ART=[...SHEETS,'bird','flock','barmaley','kot','hero-lego','village','tower','koshey-scene','more','gory','peshera','final'];
 ART.forEach(n=>{new Image().src=`art/${n}.webp`}); // заранее, чтобы работало и без интернета
-const GRID=8,FRAMES=GRID*GRID,FOOT=.027; // FOOT: пустая кромка под ногами на листе
+const GRID=6,FRAMES=GRID*GRID,FOOT=.027; // FOOT: пустая кромка под ногами на листе
 const loader=new THREE.TextureLoader(),artMat={},artAspect={},artWait={};
 const shadowGeo=new THREE.CircleGeometry(.5,20);shadowGeo.rotateX(-Math.PI/2);
 const shadowMat=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.22,depthWrite:false});
@@ -705,12 +705,12 @@ const FOG={fogColor:{value:new THREE.Color()},fogNear:{value:48},fogFar:{value:9
 const SPRITE_VS=`attribute vec2 uvB;attribute float blend;varying vec2 vA;varying vec2 vB;varying float vK;varying float vD;
 void main(){vA=uv;vB=uvB;vK=blend;vec4 mv=modelViewMatrix*vec4(position,1.);vD=-mv.z;gl_Position=projectionMatrix*mv;}`;
 const SPRITE_FS=`uniform sampler2D map;uniform vec3 fogColor;uniform float fogNear;uniform float fogFar;varying vec2 vA;varying vec2 vB;varying float vK;varying float vD;
-void main(){vec4 a=texture2D(map,vA),b=texture2D(map,vB);float k=clamp((vK-.45)/.55,0.,1.),al=mix(a.a,b.a,k);if(al<.22)discard;
+void main(){vec4 a=texture2D(map,vA,-.6),b=texture2D(map,vB,-.6);float k=clamp((vK-.66)/.34,0.,1.),al=mix(a.a,b.a,k);if(al<.22)discard;
 vec3 c=mix(a.rgb*a.a,b.rgb*b.a,k)/al;c=mix(c,fogColor,smoothstep(fogNear,fogFar,vD));gl_FragColor=vec4(c,smoothstep(.22,.55,al));}`;
 function matOf(name){ // соседние кадры смешиваются, поэтому движение идёт плавно, без рывков
   if(!artMat[name]){
     artWait[name]=[];
-    const tex=loader.load(`art/s-${name}.webp?v=3`,t=>{artAspect[name]=t.image.width/t.image.height;artWait[name].forEach(fit);artWait[name]=[]});
+    const tex=loader.load(`art/s-${name}.webp?v=4`,t=>{artAspect[name]=t.image.width/t.image.height;artWait[name].forEach(fit);artWait[name]=[]});
     tex.anisotropy=4;
     artMat[name]=new THREE.ShaderMaterial({uniforms:{map:{value:tex},...FOG},vertexShader:SPRITE_VS,fragmentShader:SPRITE_FS,transparent:true,side:THREE.DoubleSide});
   }

@@ -13,14 +13,14 @@ src, out = root / "art-src", root / "art"
 out.mkdir(exist_ok=True)
 
 
-def key(rgb):
+def key(rgb, erode=3, soft=1):
     """Removes the green screen: returns RGBA with the green fringe cleaned off fur."""
     rgb = rgb.astype(float)
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     spill = g - np.maximum(r, b)
     alpha = 1 - np.clip((spill - 25) / 80, 0, 1)
     rgb[..., 1] = np.where(spill > 0, np.maximum(r, b), g)
-    a = Image.fromarray((alpha * 255).astype("uint8")).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1))
+    a = Image.fromarray((alpha * 255).astype("uint8")).filter(ImageFilter.MinFilter(erode)).filter(ImageFilter.GaussianBlur(soft))
     img = Image.fromarray(rgb.astype("uint8")).convert("RGBA")
     img.putalpha(a)
     return img, a
@@ -33,7 +33,7 @@ def cutout(name, size=640):
     img.save(out / f"{name}.webp", quality=86, method=6)
 
 
-GRID, CELL, PAD = 8, 224, 6  # PAD: пустая кромка вокруг кадра, чтобы кадры не просвечивали друг в друга
+GRID, CELL, PAD = 6, 330, 9  # PAD: пустая кромка вокруг кадра, чтобы кадры не просвечивали друг в друга
 FF = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
 FPS = 24
 
@@ -60,11 +60,22 @@ def main_only(img, a):
     mask = np.zeros(small.shape, "uint8")
     for y, x in best:
         mask[y, x] = 255
-    grown = Image.fromarray(mask).resize(a.size, Image.NEAREST).filter(ImageFilter.MaxFilter(9))
+    grown = Image.fromarray(mask).filter(ImageFilter.MaxFilter(5)).resize(a.size, Image.NEAREST)
     clean = ImageChops.multiply(a, grown)
     img = img.copy()
     img.putalpha(clean)
     return img, clean
+
+
+def shrink(img, size):
+    """Resizes without dark edges and sharpens the character, leaving its outline alone."""
+    small = img.convert("RGBa").resize(size, Image.LANCZOS).convert("RGBA")
+    alpha = small.getchannel("A")
+    crisp = small.convert("RGB").filter(ImageFilter.UnsharpMask(1.4, 70, 2))
+    inner = alpha.point(lambda v: 255 if v > 250 else 0).filter(ImageFilter.MinFilter(3))
+    out = Image.composite(crisp, small.convert("RGB"), inner)
+    out.putalpha(alpha)
+    return out
 
 
 def best_loop(frames):
@@ -85,12 +96,12 @@ def sheet(name):
     """Turns a clip into a sheet of cut-out frames for the game."""
     clip = src / "video" / f"{name}.mp4"
     info = subprocess.run([FF[:-6] + "ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(clip)], capture_output=True, text=True).stdout.strip().split(",")
-    w, h = int(info[0]) // 2 * 2 // 2, int(info[1]) // 2
-    raw = subprocess.run([FF, "-v", "error", "-i", str(clip), "-vf", f"scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+    w, h = int(info[0]), int(info[1])
+    raw = subprocess.run([FF, "-v", "error", "-i", str(clip), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
     frames = np.frombuffer(raw, "uint8").reshape(-1, h, w, 3)
     a, b = best_loop(frames)
     picks = np.linspace(a, b, GRID * GRID, endpoint=False).astype(int)
-    keyed = [main_only(*key(frames[i])) for i in picks]
+    keyed = [main_only(*key(frames[i], 5, 1.5)) for i in picks]
     box = None
     for _, al in keyed:
         c = al.point(lambda v: 255 if v > 60 else 0).getbbox()
@@ -101,8 +112,8 @@ def sheet(name):
     fw, fh = cw + PAD * 2, ch + PAD * 2
     canvas = Image.new("RGBA", (fw * GRID, fh * GRID), (0, 0, 0, 0))
     for i, (img, _) in enumerate(keyed):
-        canvas.paste(img.crop(box).resize((cw, ch), Image.LANCZOS), ((i % GRID) * fw + PAD, (i // GRID) * fh + PAD))
-    canvas.save(out / f"s-{name}.webp", quality=72, alpha_quality=85, method=4)
+        canvas.paste(shrink(img.crop(box), (cw, ch)), ((i % GRID) * fw + PAD, (i // GRID) * fh + PAD))
+    canvas.save(out / f"s-{name}.webp", quality=84, alpha_quality=90, method=4)
     print(name, f"loop {a/FPS:.1f}-{b/FPS:.1f}s", (fw, fh), (out / f"s-{name}.webp").stat().st_size // 1024, "KB")
 
 
