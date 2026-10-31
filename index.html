@@ -412,19 +412,22 @@ const flat=new WeakMap();
 function flatGeo(g){if(!g.index)return g;if(!flat.has(g))flat.set(g,g.toNonIndexed());return flat.get(g)}
 function bake(items){ // items: {geo,m(atrix),c(olor)} -> одна геометрия с цветами вершин
   let n=0; const prepared=items.map(it=>{const g=flatGeo(it.geo);n+=g.attributes.position.count;return{g,it}});
-  const pos=new Float32Array(n*3),nor=new Float32Array(n*3),col=new Float32Array(n*3),v=new THREE.Vector3(),c=new THREE.Color();
+  const pos=new Float32Array(n*3),nor=new Float32Array(n*3),cols=new Float32Array(n*3),uvs=new Float32Array(n*2),v=new THREE.Vector3(),c=new THREE.Color(),c2=new THREE.Color(),cc=new THREE.Color();
   const nm=new THREE.Matrix3();let o=0;
   prepared.forEach(({g,it})=>{
-    c.set(it.c);const P=g.attributes.position,N=g.attributes.normal,m=it.m;
+    c.set(it.c);if(it.c2!==undefined)c2.set(it.c2);const P=g.attributes.position,N=g.attributes.normal,UV=g.attributes.uv,m=it.m;
     if(m)nm.getNormalMatrix(m);
     for(let i=0;i<P.count;i++,o++){
-      v.fromBufferAttribute(P,i);if(m)v.applyMatrix4(m);pos.set([v.x,v.y,v.z],o*3);
+      v.fromBufferAttribute(P,i);
+      if(it.c2!==undefined)cc.copy(c).lerp(c2,Math.min(1,Math.max(0,v.y)));else cc.copy(c);
+      if(UV)uvs.set([UV.getX(i),UV.getY(i)],o*2);
+      if(m)v.applyMatrix4(m);pos.set([v.x,v.y,v.z],o*3);
       v.fromBufferAttribute(N,i);if(m)v.applyMatrix3(nm).normalize();nor.set([v.x,v.y,v.z],o*3);
-      col.set([c.r,c.g,c.b],o*3);
+      cols.set([cc.r,cc.g,cc.b],o*3);
     }
   });
   const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('normal',new THREE.BufferAttribute(nor,3));g.setAttribute('color',new THREE.BufferAttribute(col,3));
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('normal',new THREE.BufferAttribute(nor,3));g.setAttribute('color',new THREE.BufferAttribute(cols,3));g.setAttribute('uv',new THREE.BufferAttribute(uvs,2));
   return g;
 }
 const at=(x,y,z)=>new THREE.Matrix4().makeTranslation(x,y,z);
@@ -466,22 +469,193 @@ function buildChunks(b){ // деталь: несколько кирпичей, �
     return{center:c,h:bb.max.y-bb.min.y,geo:bake(items),color:b.pal[list[0].c]};
   });
 }
-function makeFlyer(b,scale){ // запечённая птица с машущими крыльями
-  const u=b.unit,hu=u*.85,body=[],left=[],right=[],mat=b.glow?MAT_GLOW:MAT;
-  let top=-1e9;
-  b.bricks.forEach(br=>{if(br.part==='w')top=Math.max(top,localPos(b,br).y)});
-  const zPivot=(b.wingFrom-.5)*u,midY=(b.rows*hu)/2;
-  b.bricks.forEach(br=>{
-    const p=localPos(b,br),col=b.pal[br.c];
-    if(br.part==='b')body.push(...brickItems(br.lx,br.lz,u,col,p.x,p.y-midY,p.z));
-    else if(p.z>0)right.push(...brickItems(br.lx,br.lz,u,col,p.x,p.y-top,p.z-zPivot));
-    else left.push(...brickItems(br.lx,br.lz,u,col,p.x,p.y-top,p.z+zPivot));
-  });
-  const g=new THREE.Group(),bm=new THREE.Mesh(bake(body),mat),wl=new THREE.Mesh(bake(left),mat),wr=new THREE.Mesh(bake(right),mat);
-  wl.position.set(0,top-midY,-zPivot);wr.position.set(0,top-midY,zPivot);
-  g.add(bm,wl,wr);g.wl=wl;g.wr=wr;g.midY=midY;g.scale.setScalar(scale);
-  [bm,wl,wr].forEach(m=>m.castShadow=true);
+/* ---------- Настоящие птицы: гладкое тело, перья, складные крылья ---------- */
+const WIN={burst:1.1,bird:1.45,fly:4.1,panel:6.3}; // тайминги превращения, секунды
+const col=h=>new THREE.Color(h);
+const soft=(a,b,x)=>{const t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t)};
+const lerp=(a,b,k)=>a+(b-a)*k;
+const v3=(x,y,z)=>new THREE.Vector3(x,y,z);
+const REAL={
+ snegir:{size:1.5,feet:-1.4,sing:[[2300,.16,1700],[1900,.14,2500],[2600,.22,1500]],
+  body:[[-1.72,1.62,.02],[-1.66,1.62,.42],[-1.3,1.62,.8],[-.85,1.35,.98],[-.3,.75,1.32],[.3,.45,1.38],[.9,.5,1.02],[1.5,.72,.55],[2,.9,.12],[2.1,.92,.01]],
+  paint:(t,top)=>{const c=col(0x8f99a8);c.lerp(col(0xe8352b),soft(.42,.12,top));c.lerp(col(0xf4f2ee),soft(.7,.8,t)*soft(.4,.1,top));c.lerp(col(0x16181f),Math.max(soft(.27,.2,t)*soft(-.35,-.1,top),soft(.17,.1,t)));return c},
+  beak:[[-1.62,1.68,.34],[-1.82,1.6,.28],[-2,1.48,.15],[-2.14,1.36,.01]],beakPaint:()=>col(0x23262f),
+  eye:[-1.4,1.8,.63,.13],
+  wing:{at:[-.3,1.2,1.08],L:3,W:1.45,c:0x1d2029,tip:0x14161c,cov:0x7f8998,bar:0xf1f1ee},
+  tail:{at:[1.75,.82],n:7,len:2,w:.36,c:0x1b1d25,tip:0x101116,el:-.08,spread:.28},
+  legs:[[.1,.42,-.7,.07],[.1,-.42,-.7,.07]],legC:0x3f2e2a},
+ tukan:{size:1.4,feet:-1.75,sing:[[420,.13,300],[420,.13,300],[360,.2,240]],singType:'sawtooth',
+  body:[[-1.25,2.25,.02],[-1.2,2.25,.4],[-.85,2.3,.72],[-.45,2,.85],[0,1.2,1.1],[.35,.4,1.15],[.7,-.2,.85],[1.05,-.7,.4],[1.3,-1,.06],[1.33,-1.02,.01]],
+  paint:(t,top)=>{const c=col(0x14161d);c.lerp(col(0xfff0a8),soft(.05,-.2,top)*soft(.5,.4,t)*soft(.1,.16,t));c.lerp(col(0xe2332b),soft(.74,.82,t)*soft(.2,-.2,top));return c},
+  beak:[[-1,2.3,.62],[-1.5,2.34,.68],[-2.3,2.26,.58],[-3.2,1.9,.36],[-3.9,1.38,.14],[-4.05,1.22,.01]],
+  beakPaint:(t,top)=>{const c=col(0xffd21f);c.lerp(col(0xff8a1f),soft(.4,-.2,top));c.lerp(col(0xe2332b),soft(.72,.86,t));c.lerp(col(0x202430),soft(.13,.06,t));return c},
+  eye:[-1,2.45,.5,.15],ring:0x25a6e0,
+  wing:{at:[-.05,1.5,.98],L:3.1,W:1.6,c:0x171a22,tip:0x0e1016,cov:0x20242e},
+  tail:{at:[1.15,-.82],n:6,len:2.3,w:.4,c:0x14161d,tip:0x0e1016,el:-.95,spread:.24},
+  legs:[[.2,.34,-.45,.08],[.2,-.34,-.45,.08]],legC:0x5a6b8a},
+ flamingo:{size:1.25,feet:-3.3,sing:[[300,.2,210],[330,.26,190]],singType:'sawtooth',
+  body:[[-2.95,6.3,.02],[-2.85,6.36,.3],[-2.45,6.45,.42],[-2.05,6.2,.3],[-1.85,5.5,.2],[-2.2,4.6,.2],[-2.35,3.6,.22],[-1.9,2.7,.32],[-1.2,2.25,.72],[-.3,2,1.15],[.7,2,1.1],[1.5,2.2,.6],[2.2,2.4,.1],[2.3,2.42,.01]],
+  paint:(t)=>col(0xffa3bf).lerp(col(0xff6f9f),soft(.1,.5,t)).lerp(col(0xffb2c8),soft(.6,.9,t)),
+  beak:[[-2.8,6.3,.26],[-3.2,6.1,.25],[-3.5,5.8,.2],[-3.55,5.4,.12],[-3.45,5.2,.01]],
+  beakPaint:t=>col(0xfff0ea).lerp(col(0x1c1e26),soft(.45,.6,t)),
+  eye:[-2.6,6.55,.3,.1],iris:0xffd21f,
+  wing:{at:[-.5,2.5,1.02],L:3.7,W:1.75,c:0xf0507f,tip:0x1c1e26,cov:0xff8db0},
+  tail:{at:[1.9,2.3],n:7,len:1.3,w:.42,c:0xff8db0,tip:0xf0507f,el:.05,spread:.3},
+  legs:[[.1,.26,1.1,.07],[.1,-.26,1.1,.07,.75]],legC:0xe4688c},
+ pavlin:{size:1.15,feet:-.9,sing:[[700,.3,1150],[1150,.34,620]],singType:'sawtooth',train:{at:[1.25,1.55]},
+  body:[[-2.2,3.9,.02],[-2.15,3.9,.3],[-1.85,3.95,.4],[-1.6,3.6,.3],[-1.45,2.7,.33],[-1.2,1.9,.55],[-.6,1.35,.95],[.2,1.2,1.1],[1,1.35,.75],[1.7,1.6,.25],[2,1.7,.01]],
+  paint:(t,top)=>{const c=col(0x1467d6).lerp(col(0x10b5bd),.5+.5*Math.sin(t*38)*.35);c.lerp(col(0x1fa66a),soft(.6,.74,t)*soft(-.3,.2,top));c.lerp(col(0x123a8c),soft(.1,-.5,top)*soft(.5,.7,t));return c},
+  beak:[[-2.1,3.92,.2],[-2.35,3.86,.16],[-2.62,3.76,.01]],beakPaint:()=>col(0xc9b48a),
+  eye:[-1.98,4.02,.3,.1],ring:0xf4f4f4,
+  crest:{at:[-1.85,4.28],n:7,len:.85,c:0x1a4fa8,tip:0x29d3cf},
+  wing:{at:[-.3,1.75,.86],L:2.7,W:1.3,c:0xb47a3e,tip:0x4a2d1c,cov:0x1fa66a},
+  legs:[[-.05,.32,.45,.08],[-.05,-.32,.45,.08]],legC:0x8f97a6},
+ zhar:{size:1.2,feet:-.95,glow:true,sing:[[1047,.14],[1319,.14],[1568,.14],[2093,.3]],singType:'sine',
+  body:[[-2.3,3,.02],[-2.25,3,.33],[-1.85,3.05,.5],[-1.5,2.6,.45],[-1.2,1.8,.62],[-.6,1.25,1],[.25,1.1,1.12],[1.05,1.3,.75],[1.75,1.6,.3],[2.1,1.7,.01]],
+  paint:(t,top)=>{const c=col(0xffe06a).lerp(col(0xff9420),soft(.12,.42,t)).lerp(col(0xf0342c),soft(.45,.85,t));c.lerp(col(0xffd93b),soft(.1,-.5,top)*.7);return c},
+  beak:[[-2.2,3,.24],[-2.5,2.92,.2],[-2.75,2.74,.01]],beakPaint:()=>col(0xffcf33),
+  eye:[-2,3.14,.36,.11],iris:0x20242e,ring:0xfff0a0,
+  crest:{at:[-1.95,3.36],n:7,len:1.3,c:0xff9420,tip:0xfff0a0},
+  wing:{at:[-.45,1.8,.92],L:3.7,W:1.7,c:0xff9420,tip:0xf0342c,cov:0xffd93b},
+  plumes:{at:[1.6,1.55],n:7},
+  legs:[[-.05,.34,.45,.08],[-.05,-.34,.45,.08]],legC:0xc98a2b}
+};
+function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);return new THREE.CanvasTexture(c)}
+const featherTex=canvasTex(128,128,(g,w,h)=>{ // чешуя мелких перьев: рисунок повторяется по всему телу
+  g.fillStyle='#fff';g.fillRect(0,0,w,h);
+  for(let row=0;row<5;row++)for(let i=-1;i<5;i++){
+    const x=i*32+(row%2?16:0),y=row*32-8;
+    const gr=g.createRadialGradient(x+16,y+4,4,x+16,y+8,28);gr.addColorStop(0,'#fff');gr.addColorStop(.72,'#f1f1f1');gr.addColorStop(1,'#a9a9a9');
+    g.fillStyle=gr;g.beginPath();g.moveTo(x-2,y);g.quadraticCurveTo(x+16,y+56,x+34,y);g.closePath();g.fill();
+  }
+});
+featherTex.wrapS=featherTex.wrapT=THREE.RepeatWrapping;
+const trainTex=canvasTex(96,384,(g,w,h)=>{ // перо павлина с глазком
+  g.clearRect(0,0,w,h);const cx=w/2;
+  g.strokeStyle='#d6c98a';g.lineWidth=3;g.beginPath();g.moveTo(cx,h);g.lineTo(cx,40);g.stroke();
+  for(let y=h-30;y>70;y-=5){const k=(h-y)/h,len=(y<170?44:12+k*34);g.strokeStyle=y%2?'#17a765':'#25c27c';g.lineWidth=2;
+    g.beginPath();g.moveTo(cx,y);g.lineTo(cx-len,y-26);g.moveTo(cx,y);g.lineTo(cx+len,y-26);g.stroke()}
+  const eye=(r,c,dy=0)=>{g.fillStyle=c;g.beginPath();g.ellipse(cx,88+dy,r,r*1.22,0,0,6.3);g.fill()};
+  eye(38,'#e6c24a');eye(31,'#0fb2a8');eye(21,'#1a4fc0',4);eye(13,'#10163f',8);
+});
+const featherGeo=(()=>{const s=new THREE.Shape();s.moveTo(-.1,0);s.quadraticCurveTo(-.56,.45,-.34,.82);s.quadraticCurveTo(-.1,1.02,0,1);s.quadraticCurveTo(.3,.96,.42,.72);s.quadraticCurveTo(.5,.4,.1,0);s.closePath();return new THREE.ShapeGeometry(s,6)})();
+function feather(pos,dir,normal,len,w,c,c2,geo=featherGeo){ // перо: лист длиной 1 вдоль Y
+  const Y=dir.clone().normalize(),X=new THREE.Vector3().crossVectors(Y,normal).normalize(),Z=new THREE.Vector3().crossVectors(X,Y);
+  const m=new THREE.Matrix4().makeBasis(X.multiplyScalar(w),Y.multiplyScalar(len),Z);m.setPosition(pos);
+  const n=.9+Math.random()*.1;
+  return{geo,m,c:col(c).multiplyScalar(n).getHex(),c2:col(c2===undefined?c:c2).multiplyScalar(n).getHex()};
+}
+function loft(pts,paint,{seg=52,rad=22,uv=7}={}){ // гладкая трубка по точкам [x,y,радиус]
+  const C=new THREE.CatmullRomCurve3(pts.map(p=>v3(p[0],p[1],0))),Rd=new THREE.CatmullRomCurve3(pts.map(p=>v3(p[2],0,0)));
+  const P=[],U=[],K=[],I=[],q=v3(),T=v3();
+  for(let i=0;i<=seg;i++){
+    const t=i/seg;C.getPoint(t,q);C.getTangent(t,T);const r=Math.max(.005,Rd.getPoint(t).x),nx=-T.y,ny=T.x;
+    for(let j=0;j<=rad;j++){
+      const a=j/rad*6.2832,cs=Math.cos(a),sn=Math.sin(a);
+      P.push(q.x+nx*cs*r,q.y+ny*cs*r,sn*r);U.push(t*uv*2,j/rad*uv);
+      const c=paint(t,cs);K.push(c.r,c.g,c.b);
+    }
+  }
+  const w=rad+1;
+  for(let i=0;i<seg;i++)for(let j=0;j<rad;j++){const a=i*w+j,b=a+w,c=a+1,d=b+1;I.push(a,c,b,c,d,b)}
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));g.setAttribute('color',new THREE.Float32BufferAttribute(K,3));
+  g.setIndex(I);g.computeVertexNormals();
+  const N=g.attributes.normal;
+  for(let i=0;i<=seg;i++){const a=i*w,b=a+rad; // шов трубки
+    const x=N.getX(a)+N.getX(b),y=N.getY(a)+N.getY(b),z=N.getZ(a)+N.getZ(b),l=Math.hypot(x,y,z)||1;N.setXYZ(a,x/l,y/l,z/l);N.setXYZ(b,x/l,y/l,z/l)}
   return g;
+}
+const wingMat=new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:.68});
+const skinMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.42});
+function bodyMat(glow){return new THREE.MeshStandardMaterial({vertexColors:true,map:featherTex,bumpMap:featherTex,bumpScale:.03,roughness:.74,emissive:glow?0x552000:0})}
+function makeWing(w){ // правое крыло: размах вдоль +Z, задний край вдоль +X
+  const up=v3(0,1,0),arm=w.L*.48,armIt=[],handIt=[];
+  for(let i=0;i<9;i++){ // второстепенные маховые
+    const k=i/8,p=v3(-.12,0,k*arm),d=v3(1,0,.05+k*.28);
+    armIt.push(feather(p,d,up,w.W*(.92+k*.12),.42,w.c,w.tip));
+  }
+  for(let i=0;i<8;i++){const k=i/7,p=v3(-.2+k*.1,.05,k*arm);armIt.push(feather(p,v3(1,.06,.1+k*.3),up,w.W*.58,.4,w.bar&&i%2?w.bar:w.cov,w.cov))}
+  const hand=[];
+  for(let i=0;i<9;i++){ // первостепенные маховые
+    const k=i/8,a=lerp(.12,1.28,k),p=v3(-.1,0,k*.25);
+    handIt.push(feather(p,v3(Math.cos(a),0,Math.sin(a)),up,(w.L-arm)*lerp(.95,1.28,Math.sin(k*2.6)),.4,w.c,w.tip));
+  }
+  for(let i=0;i<6;i++){const k=i/5,a=lerp(.3,1.2,k);handIt.push(feather(v3(-.1,.05,k*.2),v3(Math.cos(a),.05,Math.sin(a)),up,(w.L-arm)*.55,.34,w.cov,w.c))}
+  const inn=new THREE.Group(),hm=new THREE.Group(),am=new THREE.Mesh(bake(armIt),wingMat),hmesh=new THREE.Mesh(bake(handIt),wingMat);
+  inn.name='inn';hm.name='hand';hm.position.z=arm;hm.add(hmesh);inn.add(am,hm);am.castShadow=hmesh.castShadow=true;
+  const piv=new THREE.Group();piv.name='piv';piv.add(inn);return piv;
+}
+function makeLeg(l,color){ // [x,z,верх,толщина,поджата]
+  const [x,z,top,th,tucked]=l,it=[],foot=tucked||0;
+  const bone=(a,b,r)=>{const g=new THREE.CylinderGeometry(r,r*1.1,1,8),d=b.clone().sub(a),q=new THREE.Quaternion().setFromUnitVectors(v3(0,1,0),d.clone().normalize());
+    it.push({geo:g,m:new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(.5),q,v3(1,d.length(),1)),c:color})};
+  return{it,bone,x,z,top,th,tucked};
+}
+function makeRealBird(b){
+  if(b.realT)return b.realT.clone(true);
+  const R=REAL[b.id],g=new THREE.Group(),inner=new THREE.Group();g.add(inner);inner.name='inner';
+  const bm=bodyMat(R.glow),add=(mesh,shadow=true)=>{mesh.castShadow=shadow;inner.add(mesh);return mesh};
+  add(new THREE.Mesh(loft(R.body,R.paint),bm));
+  add(new THREE.Mesh(loft(R.beak,R.beakPaint,{seg:20,rad:14}),skinMat));
+  // глаза
+  const [ex,ey,ez,er]=R.eye,eyeG=new THREE.SphereGeometry(er,14,10),hl=new THREE.SphereGeometry(er*.32,8,6),eyeIt=[];
+  [1,-1].forEach(s=>{
+    if(R.ring)eyeIt.push({geo:new THREE.SphereGeometry(er*1.42,12,8),m:new THREE.Matrix4().compose(v3(ex,ey,s*(ez-er*.25)),new THREE.Quaternion(),v3(1,1,.55)),c:R.ring});
+    if(R.iris)eyeIt.push({geo:eyeG,m:at(ex,ey,s*(ez+.01)).scale(v3(1.3,1.3,.8)),c:R.iris});
+    eyeIt.push({geo:eyeG,m:at(ex,ey,s*(ez+er*.3)),c:0x0c0d12},{geo:hl,m:at(ex-er*.34,ey+er*.36,s*(ez+er*1.05)),c:0xffffff});
+  });
+  add(new THREE.Mesh(bake(eyeIt),new THREE.MeshPhongMaterial({vertexColors:true,shininess:120,specular:0x777777})),false);
+  // хохолок
+  if(R.crest){const c=R.crest,it=[];for(let i=0;i<c.n;i++){const a=lerp(.9,2.5,i/(c.n-1)),d=v3(Math.cos(a)*.75,Math.sin(a),(i-(c.n-1)/2)*.09);
+    const p=v3(c.at[0],c.at[1],(i-(c.n-1)/2)*.03);
+    it.push(feather(p,d,v3(0,0,1),c.len,.075,c.c,c.c),feather(p.clone().add(d.clone().normalize().multiplyScalar(c.len*.84)),d,v3(0,0,1),c.len*.24,.2,c.tip,c.tip))}
+    add(new THREE.Mesh(bake(it),wingMat),false)}
+  // хвост
+  if(R.tail){const t=R.tail,it=[];for(let i=0;i<t.n;i++){const k=t.n>1?i/(t.n-1)*2-1:0,s=k*t.spread,d=v3(Math.cos(t.el)*Math.cos(s),Math.sin(t.el),Math.sin(s));
+    it.push(feather(v3(t.at[0],t.at[1]+Math.abs(k)*.02,k*.16),d,v3(-Math.sin(t.el),Math.cos(t.el),0),t.len*(1-.1*k*k),t.w,t.c,t.tip))}
+    add(new THREE.Mesh(bake(it),wingMat))}
+  // шлейф павлина
+  if(R.train){
+    const it=[],pg=new THREE.PlaneGeometry(1,1,1,5);pg.translate(0,.5,0);
+    [[17,5.4,0],[15,4.5,.05],[13,3.5,.1]].forEach(([n,len,dz])=>{for(let i=0;i<n;i++){const a=lerp(-.02,1.85,i/(n-1)),f=feather(v3(0,0,dz),v3(Math.cos(a),Math.sin(a),0),v3(0,0,1),len*(.92+.08*Math.sin(i*2.4)),len*.27,0xffffff,0xffffff,pg);f.c=f.c2=0xffffff;it.push(f)}});
+    const tr=new THREE.Mesh(bake(it),new THREE.MeshStandardMaterial({map:trainTex,alphaTest:.45,side:THREE.DoubleSide,roughness:.5,vertexColors:true}));
+    tr.name='train';tr.position.set(R.train.at[0],R.train.at[1],0);tr.castShadow=true;inner.add(tr);
+  }
+  // огненные перья
+  if(R.plumes){
+    const m=new THREE.MeshBasicMaterial({vertexColors:true}),holder=new THREE.Group();holder.name='plumes';holder.position.set(R.plumes.at[0],R.plumes.at[1],0);
+    for(let i=0;i<R.plumes.n;i++){
+      const k=i/(R.plumes.n-1),e=lerp(.75,-.55,k),L=lerp(5.6,7.8,Math.sin(k*3.14)),p=[];
+      for(let j=0;j<=6;j++){const q=j/6,x=Math.cos(e)*L*q,y=Math.sin(e)*L*q+Math.sin(q*5+i)*.42*q-q*q*1;p.push([x,y,j===6?.01:(j===5?.3:.05+q*.09)])}
+      const pm=new THREE.Mesh(loft(p,t=>col(0xffe06a).lerp(col(0xff7a1a),soft(.1,.6,t)).lerp(col(0xfff0a0),soft(.8,.95,t)),{seg:30,rad:6}),m);
+      pm.position.z=(k-.5)*.5;pm.castShadow=true;holder.add(pm);
+    }
+    inner.add(holder);
+  }
+  // крылья
+  [['wR',1],['wL',-1]].forEach(([name,s])=>{
+    const h=new THREE.Group();h.name=name;h.position.set(R.wing.at[0],R.wing.at[1],s*R.wing.at[2]);h.scale.z=s;h.add(makeWing(R.wing));inner.add(h);
+  });
+  // лапы
+  const legs=new THREE.Group();legs.name='legs';legs.position.y=.6;inner.add(legs);
+  R.legs.forEach(l=>{
+    const L=makeLeg(l,R.legC),top=v3(L.x,L.top-.6,L.z);
+    if(L.tucked){const knee=v3(L.x+.15,L.top-.6-L.tucked*1.1,L.z);L.bone(top,knee,L.th);L.bone(knee,v3(L.x+.9,L.top-.6-.2,L.z*.8),L.th*.8)}
+    else{const ft=v3(L.x,R.feet-.6,L.z);L.bone(top,ft,L.th);
+      [[-.5,0],[-.45,.28],[-.45,-.28],[.28,0]].forEach(([dx,dz])=>L.bone(ft,v3(L.x+dx,R.feet-.6-.03,L.z+dz),L.th*.7))}
+    const m=new THREE.Mesh(bake(L.it),skinMat);m.castShadow=true;legs.add(m);
+  });
+  inner.scale.setScalar(R.size);
+  b.realT=g;
+  return g.clone(true);
+}
+function poseBird(g,k,flap,lag){ // k: 0 сидит, 1 летит
+  ['wR','wL'].forEach(n=>{const h=g.getObjectByName(n),p=h.getObjectByName('piv'),i=h.getObjectByName('inn'),ha=h.getObjectByName('hand');
+    p.rotation.x=lerp(-1.82,-flap,k);i.rotation.y=lerp(1.46,.12,k);i.scale.x=lerp(.62,1,k);ha.rotation.x=-lag*.55*k;ha.rotation.y=lerp(.42,0,k)});
+  const l=g.getObjectByName('legs');l.rotation.z=k*1.35;
+  const t=g.getObjectByName('train');if(t){t.scale.y=lerp(1,.32,k);t.rotation.z=lerp(0,-.62,k)}
+  const pl=g.getObjectByName('plumes');if(pl)pl.rotation.z=Math.sin(flap*1.2)*.06-k*.2;
 }
 
 /* ---------- Детали мира ---------- */
@@ -544,7 +718,7 @@ function clearWorld(){
   scene.remove(world);world.traverse(o=>{if(o.geometry&&o.userData.temp)o.geometry.dispose()});
   world=new THREE.Group();scene.add(world);
   S.cats.forEach(c=>scene.remove(c.mesh));S.cats=[];
-  S.carried=[];S.bricks=[];flyers=[];winBird=null;obstacles=[];particles.length=0;
+  S.carried=[];S.bricks=[];flyers=[];winBird=null;glowSprite.visible=false;obstacles=[];particles.length=0;
 }
 function buildWorld(i){
   clearWorld();
@@ -617,7 +791,7 @@ function buildWorld(i){
   });
 
   // Уже собранная стая кружит в небе
-  BIRDS.forEach((o,n)=>{if(n!==i&&save.stars[n]){const f=makeFlyer(o,.5);f.userData={r:15+n*3.2,h:17+n*1.6,sp:.28+n*.03,ph:n*1.7};world.add(f);flyers.push(f)}});
+  BIRDS.forEach((o,n)=>{if(n!==i&&save.stars[n]){const f=makeRealBird(o);f.scale.setScalar(.55);f.userData={r:15+n*3.2,h:17+n*1.6,sp:.28+n*.03,ph:n*1.7};world.add(f);flyers.push(f)}});
 
   for(let n=0;n<b.cats;n++)S.cats.push({mesh:makeCat(),state:'wait',timer:16+n*9,t:0,dir:0});
   player.position.set(0,0,9.5);player.rotation.y=0;player.visible=true;
@@ -647,7 +821,9 @@ const sfx={
  meow:()=>{tone(540,.34,'sawtooth',.05,840);tone(840,.28,'sawtooth',.04,430,.26)},
  scatter:()=>{for(let i=0;i<6;i++)tone(900-i*90,.05,'square',.05,0,i*.05)},
  shoo:()=>{tone(880,.1,'triangle',.11,1320);tone(1320,.14,'triangle',.11,1760,.09)},
- win:()=>[523,659,784,1047,784,1047,1319].forEach((f,i)=>tone(f,.2,'triangle',.13,0,i*.13))
+ win:()=>[523,659,784,1047,784,1047,1319].forEach((f,i)=>tone(f,.2,'triangle',.13,0,i*.13)),
+ magic:()=>{for(let i=0;i<12;i++)tone(700+i*170,.16,'sine',.07,0,i*.035)},
+ sing:b=>{const R=REAL[b.id];let t=0;for(let n=0;n<2;n++)R.sing.forEach(([f,d,to])=>{tone(f,d,R.singType||'sine',.1,to||0,t);t+=d+.05})}
 };
 
 /* ---------- Частицы ---------- */
@@ -821,9 +997,10 @@ function updateCamera(dt){
     camera.position.set(Math.sin(a)*d,23,Math.cos(a)*d);camera.lookAt(0,b.rows*b.unit*.3,0);return;
   }
   if(S.mode==='win'){
-    const k=Math.min(S.winT/1.4,1),a=S.yaw+S.winT*.16,d=S.camD;
-    camFocus.lerp(_p.set(0,winBird?Math.min(winBird.position.y*.75,12):3,0),Math.min(1,dt*1.8));
-    camera.position.set(camFocus.x+Math.sin(a)*d,camFocus.y+S.camH*.6,camFocus.z+Math.cos(a)*d);camera.lookAt(camFocus);return;
+    const near=Math.min(S.winT/1.2,1)*(1-soft(WIN.fly,WIN.fly+2,S.winT)),a=S.yaw*(1-near)+Math.sin(S.winT*.4)*.22,d=S.camD*lerp(1,.68,near);
+    const h=S.bird.rows*S.bird.unit*.42+S.baseY;
+    camFocus.lerp(_p.set(winBird?winBird.position.x*.5:0,winBird?Math.max(h,Math.min(winBird.position.y*.8,13)):h,winBird?winBird.position.z*.5:0),Math.min(1,dt*2.2));
+    camera.position.set(camFocus.x+Math.sin(a)*d,camFocus.y+S.camH*lerp(.55,.2,near),camFocus.z+Math.cos(a)*d);camera.lookAt(camFocus);return;
   }
   camFocus.lerp(player.position,Math.min(1,dt*6));
   camera.position.set(camFocus.x+Math.sin(S.yaw)*S.camD,S.camH,camFocus.z+Math.cos(S.yaw)*S.camD);
@@ -833,7 +1010,7 @@ function updateFlyers(dt){
   flyers.forEach(f=>{const u=f.userData,a=S.time*u.sp+u.ph;
     f.position.set(Math.cos(a)*u.r,u.h+Math.sin(a*2)*1.2,Math.sin(a)*u.r);
     f.rotation.y=Math.atan2(Math.cos(a),Math.sin(a));
-    const w=1.25+Math.sin(S.time*7+u.ph)*.5;f.wl.rotation.x=w;f.wr.rotation.x=-w});
+    const w=S.time*7+u.ph;poseBird(f,1,Math.sin(w)*.55,Math.sin(w-.8)*.55)});
 }
 function startWin(){
   S.mode='win';S.winT=0;arrow.visible=false;$('toast').className='';joyRest();
@@ -846,28 +1023,55 @@ function startWin(){
 }
 function showWin(){
   const b=S.bird,last=S.lvl===BIRDS.length-1,stars=S.pendingStars;
-  $('winTitle').textContent=`Ура! ${b.name} ${b.id==='zhar'?'ожила':'ожил'}!`;
+  $('winTitle').textContent=`Ура! ${b.name} ${b.id==='zhar'?'стала настоящей':'стал настоящим'}!`;
   $('winStars').innerHTML='★'.repeat(stars)+`<i>${'★'.repeat(3-stars)}</i>`;
   const hint=stars<3?'Прогоняй кота раньше, чем он прыгнет на подставку, и получишь три звезды.':'Кот ни разу не добрался до птички!';
   $('winText').textContent=last?`Вся стая собрана! ${hint}`:`${hint} Новая птичка уже ждёт.`;
   $('nextBtn').textContent=last?'К стае':'Дальше';
   $('win').hidden=false;
 }
+const glowSprite=(()=>{
+  const t=canvasTex(128,128,(g,w)=>{const r=g.createRadialGradient(w/2,w/2,0,w/2,w/2,w/2);r.addColorStop(0,'rgba(255,255,255,1)');r.addColorStop(.3,'rgba(255,245,200,.85)');r.addColorStop(1,'rgba(255,230,150,0)');g.fillStyle=r;g.fillRect(0,0,w,w)});
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false,depthTest:false,fog:false}));s.visible=false;scene.add(s);return s})();
 function updateWin(dt){
-  S.winT+=dt;const b=S.bird,t=S.winT;
-  if(t<1.2&&Math.random()<.5)burst((Math.random()-.5)*8,S.baseY+Math.random()*6,(Math.random()-.5)*4,Object.values(b.pal),3,5);
-  if(!winBird&&t>.9){
+  S.winT+=dt;const b=S.bird,t=S.winT,prev=t-dt,hit=x=>prev<x&&t>=x,cy=S.baseY+b.rows*b.unit*.45,cols=Object.values(b.pal);
+  // кирпичи дрожат и рассыпаются в искры
+  if(t<WIN.bird){
+    const k=soft(.1,WIN.burst,t),gone=soft(WIN.burst,WIN.bird,t);
+    S.bricks.forEach(o=>{
+      o.mesh.position.copy(o.slot);
+      o.mesh.position.x+=Math.sin(t*50+o.phase)*.09*k;o.mesh.position.y+=Math.cos(t*43+o.phase)*.07*k;
+      if(gone){const d=o.slot.clone().sub(_p.set(0,cy,0)).multiplyScalar(gone*.7);o.mesh.position.add(d);o.mesh.rotation.set(gone*4,gone*3,0);o.mesh.scale.setScalar(Math.max(.01,1-gone))}
+    });
+    if(Math.random()<.6)burst((Math.random()-.5)*6,cy+(Math.random()-.5)*5,(Math.random()-.5)*3,[0xffffff,0xffe27a],2,3);
+  }
+  if(hit(.25))sfx.magic();
+  const peak=(WIN.burst+WIN.bird)/2;
+  const gl=soft(.5,peak,t)*soft(WIN.bird+.75,peak,t);
+  glowSprite.visible=gl>.01;glowSprite.position.set(0,cy,0);glowSprite.scale.setScalar(4+gl*20);glowSprite.material.opacity=gl;
+  if(hit(WIN.bird)){
     S.bricks.forEach(o=>o.mesh.visible=false);ghost.visible=false;
-    winBird=makeFlyer(b,1);world.add(winBird);winBird.position.set(0,S.baseY+winBird.midY,0);
-    burst(0,S.baseY+3,0,Object.values(b.pal),60,9);tone(1047,.3,'triangle',.12,1568);
+    winBird=makeRealBird(b);world.add(winBird);
+    burst(0,cy,0,[...cols,0xffffff],70,10);
   }
-  if(winBird){
-    const k=t-.9,lift=Math.min(k/2.4,1),r=lift*lift*13,a=k*.75,h=S.baseY+winBird.midY+lift*11+Math.sin(k*2)*.4;
-    winBird.position.set(Math.cos(a)*r,h,Math.sin(a)*r);
-    if(r>.4)winBird.rotation.y=Math.atan2(Math.cos(a),Math.sin(a));
-    const w=1.25+Math.sin(k*11)*.55;winBird.wl.rotation.x=w;winBird.wr.rotation.x=-w;
+  if(!winBird)return;
+  const g=winBird,feet=REAL[b.id].size*-REAL[b.id].feet;
+  if(t<WIN.fly){ // сидит, оглядывается и поёт
+    const k=t-WIN.bird,pop=1+Math.sin(Math.min(k/.45,1)*3.14)*.14;g.scale.setScalar(Math.min(1,.3+k*2.5)*pop);
+    g.position.set(0,S.baseY+feet+Math.abs(Math.sin(k*6))*(k>1.1&&k<1.7?.22:0),0);
+    g.rotation.y=Math.sin(k*1.5)*.26;
+    const beat=soft(.75,1,k)*soft(2.3,2.05,k)*Math.max(0,Math.sin(k*17));
+    poseBird(g,beat*.22,.5,.2);
+    if(hit(WIN.bird+.8))sfx.sing(b);
+  }else{ // взлетает и кружит
+    const k=t-WIN.fly,lift=soft(0,3,k),r=lift*14,a=k*.72,h=S.baseY+feet+lift*12+Math.sin(k*2)*.3;
+    g.scale.setScalar(1);g.position.set(Math.sin(a)*r,h,Math.cos(a)*r*-1+0);
+    if(r>.1){const dx=Math.cos(a),dz=Math.sin(a);g.rotation.y=Math.atan2(dz,-dx)}
+    const f=k*11;poseBird(g,soft(0,.5,k),Math.sin(f)*.65,Math.sin(f-.8)*.65);
+    if(hit(WIN.fly+.05))tone(600,.18,'sine',.08,900);
   }
-  if(t>3.6&&$('win').hidden)showWin();
+  if(REAL[b.id].glow&&Math.random()<.5)burst(g.position.x,g.position.y,g.position.z,[0xffd93b,0xff8a1f],1,2);
+  if(t>WIN.panel&&$('win').hidden)showWin();
 }
 
 /* ---------- Экраны ---------- */
@@ -930,7 +1134,7 @@ function step(dt){
   updateBricks(dt);updateArrow();updateFlyers(dt);updateParticles(dt);updateCamera(dt);
   renderer.render(scene,camera);
 }
-window.__kp={S,BIRDS,startLevel,keys,player,save,step,joy};
+window.__kp={S,BIRDS,startLevel,keys,player,save,step,joy,startWin};
 showMenu();
 requestAnimationFrame(frame);
 </script>
