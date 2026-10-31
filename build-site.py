@@ -7,10 +7,10 @@ from pathlib import Path
 HEAD = """<!doctype html>
 <html lang="ru">
 <head>
-<meta name="description" content="Злой колдун Бармалей превратил зверят в кирпичики. Собери их, оживи и построй им домики.">
+<meta name="description" content="Злой колдун Бармалей превратил жителей волшебного леса в кирпичики. Собери всех, оживи и запри Бармалея в башне.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Зверята">
+<meta name="apple-mobile-web-app-title" content="Лес">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#bfd9f2">
 <link rel="manifest" href="manifest.webmanifest">

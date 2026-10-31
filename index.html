@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Кирпичные зверята</title>
+<title>Кирпичный лес</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&family=Rubik+Mono+One&display=swap">
@@ -79,7 +79,7 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);l
 #winStars i{font-style:normal;color:#dfe4ec}
 .row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 @media (max-width:700px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:340px}
-  .card:last-child{grid-column:1/-1;justify-self:center;width:calc(50% - 6px)}}
+  #cards .card:last-child{grid-column:1/-1;justify-self:center;width:calc(50% - 6px)}}
 </style>
 
 <canvas id="scene"></canvas>
@@ -97,12 +97,12 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);l
 <div id="joy" hidden><div id="nub"></div></div>
 
 <section id="menu" class="screen">
-  <h1>Кирпичные зверята</h1>
-  <p class="lead">Злой колдун Бармалей превратил зверят в кирпичики, а Кот Бандит их раскидал. Собери зверят и оживи их!</p>
+  <h1>Кирпичный лес</h1>
+  <p class="lead">Злой колдун Бармалей превратил жителей волшебного леса в кирпичики. Собери всех, оживи и запри Бармалея в башне!</p>
   <button id="taleBtn" class="brick big alt">Смотреть сказку</button>
-  <h2 class="part">Спаси зверят</h2>
+  <h2 class="part">Спаси жителей леса</h2>
   <div id="cards" class="grid"></div>
-  <h2 class="part">Построй им домики</h2>
+  <h2 class="part">Построй домики и башню</h2>
   <div id="houses" class="grid"></div>
 </section>
 
@@ -131,6 +131,22 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);l
 <script>
 'use strict';
 /* ---------- Уровни. Зверята собраны из овалов [x,y,z, rx,ry,rz, цвет], голова слева; z≠0 зеркалится. ---------- */
+function tower(put){ // круглая башня с дверью и зарешёченным окном наверху
+  const R=6,H=26;
+  for(let y=0;y<H+3;y++)for(let x=-R;x<=R;x++)for(let z=-R;z<=R;z++){
+    const r=Math.hypot(x,z);
+    if(r>R+.3||r<R-1.3)continue;
+    if(y>=H&&(Math.round(Math.atan2(z,x)*3)%2===0))continue; // зубцы
+    let c=(y+(x>0?1:0))%4===0?'B':'A';
+    if(y>=H-1)c='R';
+    if(z>0&&Math.abs(x)<2&&y<7)c=y===6?'Y':'D';
+    if(z>0&&Math.abs(x)<3&&y>=18&&y<=23){
+      if(x%2===0)put(x,y,z,'I');
+      continue;
+    }
+    put(x,y,z,c);
+  }
+}
 function house({w=14,d=4,h=9,tall=0}){ // домик: стены, окна, дверь, двускатная крыша
   return put=>{
     const H=h+tall,mid=(w-1)/2;
@@ -151,31 +167,269 @@ function house({w=14,d=4,h=9,tall=0}){ // домик: стены, окна, дв
     for(let y=H;y<H+d+3;y++)for(let z=-1;z<=0;z++)for(let x=w-4;x<=w-3;x++)if(y>H+d-1-Math.abs(z)-1||z===-1)put(x,y,z-1,'C');
   };
 }
+const BIRD_SHAPES=[
+{id:'snegir',name:'Снегирь',acc:'Снегиря',theme:'snow',catEvery:30,cats:1,wingFrom:2,chunk:[4,3],
+ pal:{K:0x20242e,G:0x8d97a8,R:0xe2382f,W:0xf6f6f6,B:0x2e3340,L:0x3a2c28,E:0x12141a},
+ slices:[[
+ "...KKKK......",
+ "..KKKKKGG....",
+ ".BBKKKGGGGG..",
+ "..RRRRGGGGGG.",
+ "..RRRRRGGGGWK",
+ "..RRRRRRRGWKK",
+ "...RRRRRRWWKK",
+ "....RRRRWW..K",
+ ".....RRWW....",
+ ".....L..L....",
+ "....LL.LL...."],[
+ ".............",
+ "...KKKKG.....",
+ "...KKKGGGG...",
+ "..REKRGGGGG..",
+ "..RRRRRGGGG..",
+ "..RRRRRRGG...",
+ "...RRRRRWW...",
+ "....RRRWW....",
+ ".............",
+ ".............",
+ "............."],[
+ ".............",
+ ".............",
+ ".............",
+ ".......KKKK..",
+ "......WWKKKK.",
+ "......KKKKKKK",
+ ".......KKKKKK",
+ ".............",
+ ".............",
+ ".............",
+ "............."]]},
+{id:'tukan',name:'Тукан',acc:'Тукана',theme:'jungle',catEvery:27,cats:1,wingFrom:2,chunk:[4,3],
+ pal:{K:0x1c2029,W:0xfff1b8,y:0xffd21f,O:0xff8a1f,R:0xe2382f,T:0x25a6e0,L:0x4b5568},
+ slices:[[
+ "........KKKK.....",
+ ".yyyyyyyKKKKK....",
+ "yyyyyyyyKKKKKK...",
+ "OOOOOOOOWWKKKKK..",
+ "R.OOOOO.WWWKKKKK.",
+ ".........WWWKKKKK",
+ "..........WWKKKKK",
+ "..........RKKKKKK",
+ "...........KKK.KK",
+ "...........L.L...",
+ "..........LL.LL.."],[
+ ".................",
+ ".....yy.KKKKK....",
+ "..yyyyyyKTKKK....",
+ "..OOOOO.WWKKKK...",
+ "........WWWKKKK..",
+ ".........WWKKKKK.",
+ "..........WKKKK..",
+ "..........RKKK...",
+ ".................",
+ ".................",
+ "................."],[
+ ".................",
+ ".................",
+ ".................",
+ "...........KKKK..",
+ "...........KKKKK.",
+ "...........KKKKKK",
+ "............KKKKK",
+ "............TKKK.",
+ ".................",
+ ".................",
+ "................."]]},
+{id:'flamingo',name:'Фламинго',acc:'Фламинго',theme:'lagoon',catEvery:24,cats:1,wingFrom:2,chunk:[4,3],
+ pal:{P:0xff7fa8,H:0xf0507f,k:0x20242e,W:0xfff1f4,L:0xd9607f,E:0x20242e},
+ slices:[[
+ "..PPPP........",
+ ".PPPPPP.......",
+ "kWPPPPP.......",
+ "kWW..PPP......",
+ "k.....PP......",
+ ".....PP.......",
+ "....PP........",
+ "....PP........",
+ ".....PP.......",
+ ".....PPPPPP...",
+ ".....PPPPPPPPP",
+ ".....HHPPPPPPk",
+ "......HHPPPPkk",
+ ".......HPPP...",
+ "........L.....",
+ "........L.....",
+ "........L.....",
+ ".......LL.....",
+ "........L.....",
+ "......LLL....."],[
+ "..............",
+ "..PPPP........",
+ "..EPPP........",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "......PPPPP...",
+ "......PPPPPPP.",
+ "......HHPPPPP.",
+ ".......HPPPP..",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ ".............."],[
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ ".......HHHH...",
+ ".......HHHHHH.",
+ ".......HHHHHkk",
+ "........HHHkk.",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ "..............",
+ ".............."]]},
+{id:'pavlin',name:'Павлин',acc:'Павлина',theme:'garden',catEvery:22,cats:1,wingFrom:2,chunk:[4,4],fan:{col:8,row:12,r:12.6},
+ pal:{B:0x1668c9,D:0x0f4a96,G:0x1fa66a,T:0x10b5bd,Y:0xffcf33,o:0xe89a2c,W:0xf6f6f6,U:0x173a8a,L:0x8d97a8,E:0x12141a,m:0x2fc06f},
+ slices:[[
+ "...Y.Y",
+ "...YY.",
+ "...BB.",
+ ".oBBB.",
+ "...BB.",
+ "...BB.",
+ "...BBB",
+ "..BBBBB",
+ "..BBBBBBG",
+ "..BBBBBBGG",
+ "...BBBBGGG",
+ "....BBBB",
+ ".....LL",
+ ".....L.L",
+ "....LL.LL",
+ ".",
+ ],[
+ ".",".",
+ "...BB.",
+ "..EBB.",
+ ".",
+ ".",
+ "...BB",
+ "...BBBB",
+ "...BBBBBG",
+ "...BBBBBG",
+ "....BBBG",
+ ".",".",".",".",".",
+ ],[
+ ".",".",".",".",".",".",".",
+ "....DDDD",
+ "....DDDDDD",
+ "....ooDDDD",
+ ".....ooDD",
+ ".",".",".",".",".",
+ ]]},
+{id:'zhar',name:'Жар-птица',acc:'Жар-птицу',theme:'night',catEvery:20,cats:2,wingFrom:2,chunk:[4,3],glow:true,
+ pal:{Y:0xffd93b,O:0xff8a1f,R:0xf0342c,y:0xfff0a0,L:0xc98a2b,E:0x20242e},
+ slices:[[
+ "...Y.Y..............",
+ "....YY..............",
+ "...RRR..............",
+ ".yORRR..............",
+ "...ORR..............",
+ "...OORR.............",
+ "...OOORRRR.........Y",
+ "...OOOOORRRRR.....YY",
+ "...YOOOOORRRRRR..YOO",
+ "....YYOOOORRRRRRYOR.",
+ ".....YYOOOORRRRYOR..",
+ "......YYOORRYYOOR...",
+ ".......LL..YOOR.....",
+ "......LL.LYOR.......",
+ "........LYR........."],[
+ "....................",
+ "....................",
+ "...RRR..............",
+ "...ERR..............",
+ "...ORR..............",
+ "...OOR..............",
+ "....OORRR...........",
+ "....OOOORRRR........",
+ "....YOOOORRRR.......",
+ ".....YOOORRR........",
+ "......YOORR.........",
+ "....................",
+ "....................",
+ "....................",
+ "...................."],[
+ ".........Y..........",
+ "........YOY.........",
+ ".......YOOY.........",
+ "......YOORY.........",
+ ".....YOORRY.........",
+ ".....OORRRY.........",
+ "......RRROY.........",
+ ".......RROOY........",
+ "........ROOYY.......",
+ "........OOOYY.......",
+ "....................",
+ "....................",
+ "....................",
+ "....................",
+ "...................."]]}
+];
+
+const shape=id=>{const o=BIRD_SHAPES.find(b=>b.id===id);return{slices:o.slices,pal:o.pal,fan:o.fan}};
 const ANIMALS=[
-{id:'zayka',name:'Зайка',theme:'garden',catEvery:30,cats:1,chunk:[4,4],art:'zayka',aspect:.68,tall:6.4,sing:[[900,.1,1300],[1200,.1,800],[1000,.12,1500]],
+{id:'zayka',name:'Зайка',theme:'garden',catEvery:30,cats:1,chunk:[4,4],art:'zayka',tall:7.2,sing:[[900,.1,1300],[1200,.1,800],[1000,.12,1500]],
  pal:{C:0xd8a86a,W:0xfff3df,P:0xffa6b5,K:0x2a1c14},
  blobs:[[8,5,0,3.6,4.6,3.2,'C'],[6.2,5,0,2,3.6,2.4,'W'],[6,11,0,3.2,2.8,2.8,'C'],[3.6,10.2,0,1.2,1,1.4,'W'],[2.8,10.6,0,.6,.6,.7,'P'],[4.6,11.6,2,.7,.8,.7,'K'],[7.5,16,1.6,1.1,4,.8,'C'],[6.7,16,1.6,.5,3.2,.6,'P'],[9,1.2,2.4,3,1.4,1.3,'W'],[4.8,6.5,1.8,1,1.4,.9,'C'],[12,3.5,0,1.5,1.5,1.5,'W']]},
-{id:'medved',name:'Мишка',theme:'snow',catEvery:27,cats:1,chunk:[4,4],art:'medved',aspect:.96,tall:5.6,sing:[[150,.3,110],[120,.34,90]],singType:'sawtooth',
+{id:'snegir',name:'Снегирь',bird:true,theme:'snow',catEvery:29,cats:1,chunk:[4,3],art:'snegir',tall:6.4,sing:[[2300,.16,1700],[1900,.14,2500],[2600,.22,1500]],...shape('snegir')},
+{id:'medved',name:'Мишка',theme:'snow',catEvery:27,cats:1,chunk:[4,4],art:'medved',tall:6.4,sing:[[150,.3,110],[120,.34,90]],singType:'sawtooth',
  pal:{W:0xf4f2ea,S:0xd9d6cc,K:0x20242e},
  blobs:[[11,7,0,7,4.5,4,'W'],[3.5,8,0,3.4,3,3,'W'],[.8,7,0,1.4,1.2,1.4,'S'],[0,7.6,0,.7,.6,.8,'K'],[2,9,2.2,.7,.7,.6,'K'],[4.5,11,2.4,1,1,.7,'W'],[6,2.4,3,1.8,3,1.6,'S'],[15.5,2.4,3,1.8,3,1.6,'S'],[18,8,0,1,1,1,'S']]},
-{id:'slon',name:'Слонёнок',theme:'jungle',catEvery:25,cats:1,chunk:[5,4],art:'slon',aspect:1.08,tall:6.6,sing:[[520,.16,980],[980,.42,760]],singType:'sawtooth',
+{id:'flamingo',name:'Фламинго',bird:true,theme:'lagoon',catEvery:26,cats:1,chunk:[4,4],art:'flamingo',tall:9,sing:[[300,.2,210],[330,.26,190]],singType:'sawtooth',...shape('flamingo')},
+{id:'slon',name:'Слонёнок',theme:'jungle',catEvery:25,cats:1,chunk:[5,4],art:'slon',tall:7.2,sing:[[520,.16,980],[980,.42,760]],singType:'sawtooth',
  pal:{G:0x9aa3b2,D:0x7f8899,P:0xf6a8b8,K:0x20242e},
  blobs:[[11,8,0,6.5,5,4.4,'G'],[4,10,0,3.2,3.2,3,'G'],[1.4,9,0,1.2,1.4,1.1,'G'],[0,6.8,0,.9,1.6,.9,'G'],[-.2,4.6,0,.8,1.4,.8,'G'],[-1.2,3.2,0,.9,.8,.8,'G'],[6.5,11,3.4,2.6,3.2,.8,'G'],[6.4,11,4,1.8,2.4,.4,'P'],[2.6,11.4,2.6,.6,.7,.5,'K'],[7,2.4,3,2,3.4,1.8,'D'],[15,2.4,3,2,3.4,1.8,'D'],[18,9,0,.6,2,.6,'D']]},
-{id:'zhiraf',name:'Жирафёнок',theme:'lagoon',catEvery:23,cats:1,chunk:[5,5],art:'zhiraf',aspect:.46,tall:10,sing:[[420,.16,620],[620,.2,420]],
+{id:'pavlin',name:'Павлин',bird:true,theme:'garden',catEvery:24,cats:1,chunk:[5,5],art:'pavlin',tall:8,sing:[[700,.3,1150],[1150,.34,620]],singType:'sawtooth',...shape('pavlin')},
+{id:'zhiraf',name:'Жирафёнок',theme:'lagoon',catEvery:23,cats:1,chunk:[5,5],art:'zhiraf',tall:10.5,sing:[[420,.16,620],[620,.2,420]],
  pal:{Y:0xf2c14e,B:0x9a5a22,C:0xfff0c8,K:0x20242e},
  blobs:[[11,10,0,5.5,3,2.8,'Y'],[6.6,13,0,2,3,1.6,'Y'],[5.4,17,0,1.6,3,1.4,'Y'],[4.6,21,0,1.4,2.6,1.3,'Y'],[2.8,24,0,2.6,1.6,1.6,'Y'],[.6,23.6,0,1,1,1.2,'C'],[2.6,24.6,1.5,.5,.6,.5,'K'],[4,26.6,.9,.4,1.2,.4,'B'],[5,25,2,.9,.5,.6,'Y'],[7,4,2,1,5,1,'Y'],[15,4,2,1,5,1,'Y'],[7,.4,2,1.1,.8,1.1,'B'],[15,.4,2,1.1,.8,1.1,'B'],[8,11,2.4,1.2,1,.8,'B'],[12,12,2.4,1.3,1,.8,'B'],[14,9,2.4,1,1,.8,'B'],[10,8.5,2.4,1,.8,.8,'B'],[6.2,15,1.4,.9,.9,.6,'B'],[5,19,1.2,.8,.9,.6,'B'],[17,12,0,.5,2.4,.5,'B']]},
-{id:'lisa',name:'Лисёнок',theme:'night',catEvery:21,cats:2,chunk:[5,4],art:'lisa',aspect:.96,tall:5.8,sing:[[1100,.1,1500],[1500,.08,1000],[1400,.16,700]],singType:'triangle',
+{id:'edinorog',name:'Единорог',theme:'garden',catEvery:23,cats:1,chunk:[5,4],art:'edinorog',tall:7.4,sing:[[1319,.12],[1568,.12],[1760,.12],[2093,.24]],
+ pal:{W:0xfaf4f4,P:0xffb3d4,L:0xc9a6ff,Y:0xffcf33,K:0x2a1c24,S:0xe9dfe6},
+ blobs:[[11,9,0,6,3.8,3.2,'W'],[6,12.5,0,2.2,3.4,1.9,'W'],[3.6,15.6,0,2.8,2,2,'W'],[1.2,14.8,0,1.3,1.2,1.3,'S'],[3,16.4,1.7,.6,.7,.5,'K'],[3.4,19.6,0,.5,2,.5,'Y'],[5,18,1.2,.6,1,.5,'W'],[7,15,0,1.4,4,1.2,'P'],[8.5,11.5,0,1,3,1.1,'L'],[7,4,2,1.2,4.4,1.1,'W'],[15,4,2,1.2,4.4,1.1,'W'],[7,.4,2,1.3,.8,1.2,'L'],[15,.4,2,1.3,.8,1.2,'L'],[18,8,0,1.6,3.4,1.4,'P'],[19.4,5,0,1.2,2.6,1.1,'L']]},
+{id:'lisa',name:'Лисёнок',theme:'night',catEvery:22,cats:1,chunk:[5,4],art:'lisa',tall:6.6,sing:[[1100,.1,1500],[1500,.08,1000],[1400,.16,700]],singType:'triangle',
  pal:{O:0xf08a24,W:0xfff1dc,K:0x2a1c14,D:0x9c4a14},
- blobs:[[10,6,0,5.5,3.4,3,'O'],[5.5,6,0,2,3,2.4,'W'],[3.6,9.6,0,3,2.6,2.6,'O'],[2.2,8.6,2,1.5,1,.9,'W'],[.8,8.8,0,1.6,1,1,'W'],[-.2,9,0,.5,.5,.6,'K'],[2.2,10.4,2,.6,.7,.5,'K'],[4.2,13,1.8,1,1.8,.7,'O'],[6.5,1.8,2,1.1,2.6,1,'D'],[13.5,1.8,2,1.1,2.6,1,'D'],[17,8,0,3.4,2.4,2.2,'O'],[20,10,0,1.8,1.6,1.5,'W']]}
+ blobs:[[10,6,0,5.5,3.4,3,'O'],[5.5,6,0,2,3,2.4,'W'],[3.6,9.6,0,3,2.6,2.6,'O'],[2.2,8.6,2,1.5,1,.9,'W'],[.8,8.8,0,1.6,1,1,'W'],[-.2,9,0,.5,.5,.6,'K'],[2.2,10.4,2,.6,.7,.5,'K'],[4.2,13,1.8,1,1.8,.7,'O'],[6.5,1.8,2,1.1,2.6,1,'D'],[13.5,1.8,2,1.1,2.6,1,'D'],[17,8,0,3.4,2.4,2.2,'O'],[20,10,0,1.8,1.6,1.5,'W']]},
+{id:'drakon',name:'Дракончик',theme:'jungle',catEvery:21,cats:2,chunk:[5,4],art:'drakon',tall:7.6,sing:[[260,.2,420],[420,.26,180]],singType:'sawtooth',
+ pal:{V:0x9a86e6,B:0x6f8fe8,L:0xd9d0ff,K:0x20242e,W:0xb79cf0},
+ blobs:[[10,7,0,5,5.6,4,'V'],[7.6,6.6,0,2.6,4.4,2.8,'L'],[6,14,0,3.6,3,3,'V'],[3,13,0,1.6,1.4,1.8,'B'],[4.6,15.2,2.2,.7,.8,.6,'K'],[7.6,17,1.6,.7,1,.6,'B'],[8,1.6,3,2.2,1.8,1.6,'B'],[12,1.6,3,2.2,1.8,1.6,'B'],[6.4,8,3.4,1,1.8,.9,'V'],[12,11,4.6,2.8,2.8,.7,'W'],[15,5,0,3,2.4,2,'V'],[18,4,0,2.4,1.5,1.3,'B'],[20.6,4,0,1.2,1,.9,'V']]},
+{id:'zhar',name:'Жар-птица',bird:true,she:true,theme:'night',catEvery:20,cats:2,chunk:[4,4],art:'zhar',tall:8,sing:[[1047,.14],[1319,.14],[1568,.14],[2093,.3]],...shape('zhar')}
 ];
 const HOUSES=[
-{id:'dom-zayka',name:'Домик Зайки',theme:'garden',catEvery:30,cats:1,chunk:[6,4],home:0,build:house({}),pal:{A:0xffd86b,B:0xf7c44c,R:0xe8622c,D:0x8a5a2e,G:0x8fd6ff,C:0xb5482a}},
-{id:'dom-medved',name:'Домик Мишки',theme:'snow',catEvery:27,cats:1,chunk:[6,4],home:1,build:house({w:16}),pal:{A:0xdff1fb,B:0xbfe2f4,R:0x3a7fc4,D:0x5b7fa6,G:0xffe27a,C:0x8f98a8}},
-{id:'dom-slon',name:'Домик Слонёнка',theme:'jungle',catEvery:25,cats:1,chunk:[6,4],home:2,build:house({w:17,d:5}),pal:{A:0xc98a58,B:0xb5763c,R:0x2f9a4d,D:0x6b3f22,G:0xfff0a8,C:0x7a5230}},
-{id:'dom-zhiraf',name:'Домик Жирафёнка',theme:'lagoon',catEvery:23,cats:1,chunk:[6,5],home:3,build:house({w:12,d:3,tall:7}),pal:{A:0xfff0c8,B:0xf2c14e,R:0xd7263d,D:0x9a5a22,G:0x43bcd8,C:0x9a5a22}},
-{id:'dom-lisa',name:'Домик Лисёнка',theme:'night',catEvery:21,cats:2,chunk:[6,4],home:4,build:house({}),pal:{A:0x7a5fd0,B:0x6349b8,R:0xff8a1f,D:0x3a2c28,G:0xffe27a,C:0x41357e}}
+{id:'dom-zayka',name:'Домик Зайки',theme:'garden',catEvery:30,cats:1,chunk:[6,4],home:'zayka',build:house({}),pal:{A:0xffd86b,B:0xf7c44c,R:0xe8622c,D:0x8a5a2e,G:0x8fd6ff,C:0xb5482a}},
+{id:'dom-medved',name:'Домик Мишки',theme:'snow',catEvery:27,cats:1,chunk:[6,4],home:'medved',build:house({w:16}),pal:{A:0xdff1fb,B:0xbfe2f4,R:0x3a7fc4,D:0x5b7fa6,G:0xffe27a,C:0x8f98a8}},
+{id:'dom-slon',name:'Домик Слонёнка',theme:'jungle',catEvery:25,cats:1,chunk:[6,4],home:'slon',build:house({w:17,d:5}),pal:{A:0xc98a58,B:0xb5763c,R:0x2f9a4d,D:0x6b3f22,G:0xfff0a8,C:0x7a5230}},
+{id:'dom-zhiraf',name:'Домик Жирафёнка',theme:'lagoon',catEvery:23,cats:1,chunk:[6,5],home:'zhiraf',build:house({w:12,d:3,tall:7}),pal:{A:0xfff0c8,B:0xf2c14e,R:0xd7263d,D:0x9a5a22,G:0x43bcd8,C:0x9a5a22}},
+{id:'dom-lisa',name:'Домик Лисёнка',theme:'night',catEvery:21,cats:2,chunk:[6,4],home:'lisa',build:house({}),pal:{A:0x7a5fd0,B:0x6349b8,R:0xff8a1f,D:0x3a2c28,G:0xffe27a,C:0x41357e}},
+{id:'bashnya',name:'Башня для Бармалея',theme:'night',catEvery:17,cats:2,boss:true,chunk:[6,5],build:tower,pal:{A:0xb5bccb,B:0x8f98a8,D:0x4a2d1c,G:0x2a2438,I:0x4a4f66,R:0xd7263d,Y:0xffc928}}
 ];
-const LEVELS=[...ANIMALS,...HOUSES];
+HOUSES.forEach(h=>{if(h.home)h.home=ANIMALS.findIndex(a=>a.id===h.home)});
+const LEVELS=[...ANIMALS,...HOUSES],R_N=ANIMALS.length,TOWER=LEVELS.length-1;
 
 const THEMES={
  snow:{sky:0xbfd9f2,a:0xf6fafd,b:0xe2ecf6,plinth:0x5b7fa6,hemi:.95,sun:.75,decor:['fir','fir','rock']},
@@ -190,6 +444,26 @@ const MAX_LEN=6,MAX_WID=3;
 function voxelsOf(b){
   const cells=new Map(),put=(x,y,z,c)=>cells.set(x+','+y+','+z,{x,y,z,c,part:'b'});
   if(b.build)b.build(put);
+  else if(b.slices){
+    const rows=Math.max(...b.slices.map(s=>s.length));
+    b.slices.forEach((sl,si)=>sl.forEach((row,ri)=>[...row].forEach((ch,ci)=>{
+      if(ch==='.')return;
+      put(ci,rows-1-ri,si,ch);if(si)put(ci,rows-1-ri,-si,ch);
+    })));
+    if(b.fan){
+      const f=b.fan,cy=rows-1-f.row;
+      for(let x=0;x<=f.col+13;x++)for(let y=0;y<rows;y++){
+        const dx=x-f.col+.5,dy=y-cy,r=Math.hypot(dx,dy),a=Math.atan2(dy,dx);
+        if(r<3.2||r>f.r||a<-.3||a>2.1||cells.has(x+','+y+',0'))continue;
+        const sector=Math.round((a+.3)/.3),edge=Math.abs((a+.3)/.3-sector);
+        let c='G';
+        if(r>9.6)c=edge<.27?'U':(r>11.4?'T':'m');
+        else if(r>6.8)c=edge<.27?'Y':'T';
+        else c=sector%2?'m':'G';
+        put(x,y,0,c);
+      }
+    }
+  }
   else b.blobs.forEach(([cx,cy,cz,rx,ry,rz,c])=>{
     (cz?[cz,-cz]:[0]).forEach(z0=>{
       for(let x=Math.floor(cx-rx);x<=Math.ceil(cx+rx);x++)for(let y=Math.floor(cy-ry);y<=Math.ceil(cy+ry);y++)for(let z=Math.floor(z0-rz);z<=Math.ceil(z0+rz);z++){
@@ -298,30 +572,50 @@ function buildChunks(b){ // деталь: несколько кирпичей, �
   });
 }
 /* ---------- Живые зверята и герой: нарисованные картинки в объёмном мире ---------- */
-const WIN={burst:1.1,bird:1.45,leave:3.9,panel:5.6}; // тайминги превращения, секунды
+const WIN={burst:1.1,bird:1.45,panel:5.6}; // тайминги превращения, секунды
 const soft=(a,b,x)=>{const t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t)};
 const lerp=(a,b,k)=>a+(b-a)*k;
 function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);return new THREE.CanvasTexture(c)}
-const ART=['zayka','medved','slon','zhiraf','lisa','hero','bird','flock','barmaley','kot','hero-lego','village'];
+const SHEETS=['zayka','medved','slon','zhiraf','lisa','snegir','flamingo','pavlin','zhar','edinorog','drakon','hero','barmaley-full'];
+const ART=[...SHEETS,'bird','flock','barmaley','kot','hero-lego','village','tower'];
 ART.forEach(n=>{new Image().src=`art/${n}.webp`}); // заранее, чтобы работало и без интернета
-const loader=new THREE.TextureLoader(),artMat={},planeGeo=new THREE.PlaneGeometry(1,1);planeGeo.translate(0,.5,0);
+const GRID=6,FRAMES=GRID*GRID,FPS=11;
+const loader=new THREE.TextureLoader(),artMat={},artAspect={},artWait={};
 const shadowGeo=new THREE.CircleGeometry(.5,20);shadowGeo.rotateX(-Math.PI/2);
 const shadowMat=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.22,depthWrite:false});
 function matOf(name){
-  if(!artMat[name])artMat[name]=new THREE.MeshBasicMaterial({map:loader.load(`art/${name}.webp`),transparent:true,alphaTest:.3,side:THREE.DoubleSide});
+  if(!artMat[name]){
+    artWait[name]=[];
+    artMat[name]=new THREE.MeshBasicMaterial({transparent:true,alphaTest:.3,side:THREE.DoubleSide,map:loader.load(`art/s-${name}.webp`,t=>{
+      artAspect[name]=t.image.width/t.image.height;artWait[name].forEach(fit);artWait[name]=[];
+    })});
+  }
   return artMat[name];
 }
-function makeSprite(name,aspect,height){
-  const g=new THREE.Group(),plane=new THREE.Mesh(planeGeo,matOf(name)),sh=new THREE.Mesh(shadowGeo,shadowMat),w=height*aspect;
-  plane.scale.set(w,height,1);sh.scale.set(Math.max(w,height*.4)*.85,1,height*.26);sh.position.y=.04;
-  g.add(sh,plane);g.plane=plane;g.shadow=sh;g.w=w;g.left=true;return g;
+function fit(g){ // картинка подгрузилась: выставляем размер по пропорциям кадра
+  const a=artAspect[g.art];g.w=g.h*a;g.plane.scale.set((g.left?1:-1)*g.w,g.h,1);g.shadow.scale.set(Math.max(g.w,g.h*.4)*.72,1,g.h*.24);
+}
+function makeSprite(name,height){ // живой герой: кадры из ролика на листе
+  const geo=new THREE.PlaneGeometry(1,1);geo.translate(0,.5,0);
+  const g=new THREE.Group(),plane=new THREE.Mesh(geo,matOf(name)),sh=new THREE.Mesh(shadowGeo,shadowMat);
+  sh.position.y=.04;g.add(sh,plane);Object.assign(g,{plane,shadow:sh,art:name,h:height,w:height,left:true,ft:Math.random()*FRAMES,loop:false});
+  if(artAspect[name])fit(g);else{plane.scale.set(height,height,1);artWait[name].push(g)}
+  setFrame(g,0);return g;
+}
+function setFrame(g,i){
+  const c=i%GRID,r=(i/GRID)|0,u0=c/GRID,u1=(c+1)/GRID,v1=1-r/GRID,v0=1-(r+1)/GRID,uv=g.plane.geometry.attributes.uv;
+  uv.setXY(0,u0,v1);uv.setXY(1,u1,v1);uv.setXY(2,u0,v0);uv.setXY(3,u1,v0);uv.needsUpdate=true;
+}
+function tick(g,dt){ // туда-обратно, чтобы цикл шёл без рывка; бег героя идёт по кругу
+  g.ft+=dt*FPS;const f=g.ft|0,span=FRAMES*2-2,k=f%span;
+  setFrame(g,g.loop?f%FRAMES:(k<FRAMES?k:span-k));
 }
 function turn(g,left){if(g.left===left)return;g.left=left;g.plane.scale.x=(left?1:-1)*g.w}
 function faceCamera(g){
   const p=g.getWorldPosition(_v);g.plane.rotation.y=Math.atan2(camera.position.x-p.x,camera.position.z-p.z);
 }
 const _v=new THREE.Vector3();
-const heroSprite=makeSprite('hero',.54,3.1);heroSprite.visible=false;scene.add(heroSprite);
+const heroSprite=makeSprite('hero',3.5);heroSprite.visible=false;heroSprite.loop=true;scene.add(heroSprite);
 
 /* ---------- Детали мира ---------- */
 const rng=seed=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
@@ -342,8 +636,8 @@ const DECOR={
 
 /* ---------- Состояние ---------- */
 const save={stars:[],hero:false,intro:false};
-try{Object.assign(save,JSON.parse(localStorage.getItem('kirpich-zverata-v1')||'{}'))}catch(e){}
-const persist=()=>{try{localStorage.setItem('kirpich-zverata-v1',JSON.stringify(save))}catch(e){}};
+try{Object.assign(save,JSON.parse(localStorage.getItem('kirpich-les-v1')||'{}'))}catch(e){}
+const persist=()=>{try{localStorage.setItem('kirpich-les-v1',JSON.stringify(save))}catch(e){}};
 const S={mode:'menu',lvl:0,bird:null,bricks:[],carried:[],cats:[],hits:0,shoos:0,yaw:0,camD:21,camH:15,time:0,dropCd:0,winT:0};
 const CAP=4;
 let world=new THREE.Group();scene.add(world);
@@ -455,17 +749,21 @@ function buildWorld(i){
     mesh.position.set(s.x,o.gy,s.z);mesh.rotation.y=rand()*3;world.add(mesh);S.bricks.push(o);
   });
 
-  // Спасённые зверята гуляют по острову
-  ANIMALS.forEach((a,n)=>{if(n!==b.home&&save.stars[n]&&n!==i)addFriend(a,rand)});
+  // Последние спасённые гуляют по острову (всех сразу телефон не потянет)
+  ANIMALS.filter((a,n)=>save.stars[n]&&n!==i&&n!==b.home).slice(-5).forEach(a=>addFriend(a,rand));
 
-  for(let n=0;n<b.cats;n++)S.cats.push({mesh:makeCat(),state:'wait',timer:16+n*9,t:0,dir:0});
+  for(let n=0;n<b.cats;n++){
+    const boss=b.boss&&n===0,mesh=boss?makeSprite('barmaley-full',6.2):makeCat();
+    if(boss){mesh.visible=false;scene.add(mesh)}
+    S.cats.push({mesh,boss,state:'wait',timer:14+n*9,t:0,dir:0});
+  }
   player.position.set(0,0,9.5);player.rotation.y=0;player.visible=true;
   S.yaw=0;S.camD=Math.min(28,Math.max(19,b.rows*b.unit*2+9));S.camH=S.camD*.72;
   camFocus.set(0,0,9.5);
 }
 function addFriend(a,rand=Math.random){
-  const f=makeSprite(a.art,a.aspect,a.tall*.56),s=freeSpot(rand);
-  f.position.set(s.x,0,s.z);f.u={tx:s.x,tz:s.z,rest:rand()*3,ph:rand()*6};world.add(f);friends.push(f);return f;
+  const f=makeSprite(a.art,a.tall*.56),s=freeSpot(rand);
+  f.position.set(s.x,0,s.z);f.u={tx:s.x,tz:s.z,rest:rand()*3,ph:rand()*6,fly:a.bird};world.add(f);friends.push(f);return f;
 }
 function freeSpot(rand){
   for(let i=0;i<60;i++){
@@ -491,6 +789,7 @@ const sfx={
  scatter:()=>{for(let i=0;i<6;i++)tone(900-i*90,.05,'square',.05,0,i*.05)},
  shoo:()=>{tone(880,.1,'triangle',.11,1320);tone(1320,.14,'triangle',.11,1760,.09)},
  win:()=>[523,659,784,1047,784,1047,1319].forEach((f,i)=>tone(f,.2,'triangle',.13,0,i*.13)),
+ grumble:()=>{tone(110,.3,'sawtooth',.1,80);tone(90,.34,'sawtooth',.1,70,.3)},
  magic:()=>{for(let i=0;i<12;i++)tone(700+i*170,.16,'sine',.07,0,i*.035)},
  sing:b=>{let t=0;for(let n=0;n<2;n++)b.sing.forEach(([f,d,to])=>{tone(f,d,b.singType||'sine',.11,to||0,t);t+=d+.05})}
 };
@@ -577,19 +876,20 @@ function scatter(cat){
     const o=pool.splice(Math.random()*pool.length|0,1)[0],s=freeSpot(Math.random);
     flyTo(o,s.x,o.gy,s.z,.9+Math.random()*.4,7+Math.random()*4,()=>{o.state='ground';o.x=s.x;o.z=s.z;o.mesh.rotation.set(0,Math.random()*3,0)});
   }
-  if(n){S.hits++;sfx.scatter();toast('Бандит раскидал детальки! Собирай заново.',true);burst(0,S.baseY+2,0,[0xffffff,0xffc928],16,7);drawHud()}
+  if(n){S.hits++;sfx.scatter();toast(cat.boss?'Бармалей раскидал детальки! Собирай заново.':'Бандит раскидал детальки! Собирай заново.',true);burst(0,S.baseY+2,0,[0xffffff,0xffc928],16,7);drawHud()}
 }
 function updateCat(c,dt){
   c.t+=dt;const m=c.mesh,p=m.position;
   const go=(tx,tz,sp)=>{const dx=tx-p.x,dz=tz-p.z,l=Math.hypot(dx,dz)||1;p.x+=dx/l*sp*dt;p.z+=dz/l*sp*dt;
+    if(c.boss){turn(m,dx*Math.cos(S.yaw)-dz*Math.sin(S.yaw)<0);return l}
     m.rotation.y=Math.atan2(dz,-dx);const sw=Math.sin(S.time*15)*.7;m.legs.forEach((g,i)=>g.rotation.z=i%3?sw:-sw);return l};
-  m.tail.rotation.z=Math.sin(S.time*7)*.35;
+  if(c.boss){tick(m,dt);faceCamera(m)}else m.tail.rotation.z=Math.sin(S.time*7)*.35;
   if(c.state==='wait'){
     c.timer-=dt;
     if(c.timer<=0){
       if(S.bricks.filter(b=>b.state==='placed').length<2){c.timer=3;return}
-      const a=Math.random()*6.28;p.set(Math.cos(a)*(R_WORLD-1),0,Math.sin(a)*(R_WORLD-1));m.visible=true;m.rotation.y=Math.atan2(-p.z,p.x);
-      c.state='peek';c.t=0;c.den=a;sfx.meow();toast('Кот Бандит идёт! Беги и прогони его!',true);
+      const a=Math.random()*6.28;p.set(Math.cos(a)*(R_WORLD-1),0,Math.sin(a)*(R_WORLD-1));m.visible=true;if(!c.boss)m.rotation.y=Math.atan2(-p.z,p.x);
+      c.state='peek';c.t=0;c.den=a;c.boss?sfx.grumble():sfx.meow();toast(c.boss?'Бармалей идёт! Не дай ему сломать башню!':'Кот Бандит идёт! Беги и прогони его!',true);
     }
   }else if(c.state==='peek'){
     p.y=Math.abs(Math.sin(c.t*9))*.35;if(c.t>1.4){p.y=0;c.state='run'}
@@ -603,7 +903,7 @@ function updateCat(c,dt){
     if(go(tx,tz,10)<1){m.visible=false;c.state='wait';c.timer=S.bird.catEvery*(.85+Math.random()*.3)}
   }
   if((c.state==='run'||c.state==='peek')&&Math.hypot(p.x-player.position.x,p.z-player.position.z)<2.1){
-    p.y=0;c.state='flee';c.den=Math.atan2(p.z,p.x);S.shoos++;sfx.shoo();toast('Кыш! Кот Бандит убежал!');
+    p.y=0;c.state='flee';c.den=Math.atan2(p.z,p.x);S.shoos++;sfx.shoo();toast(c.boss?'Бармалей убежал! Строй скорее!':'Кыш! Кот Бандит убежал!');
     burst(p.x,1.2,p.z,[0xf08a24,0xffffff,0xffc928],14,5);
   }
 }
@@ -668,7 +968,7 @@ function updateCamera(dt){
   }
   if(S.mode==='win'||S.mode.startsWith('wake')){
     const near=Math.min(S.winT/1.2,1),a=S.yaw*(1-near)+Math.sin(S.winT*.4)*.2,d=S.camD*lerp(1,camera.aspect<1?1.02:.72,near);
-    const h=S.mode!=='win'?S.baseY+1.5:Math.min(S.bird.rows*S.bird.unit*.42+S.baseY,7);
+    const h=S.mode!=='win'?S.baseY+1.5:S.bird.boss?7.5:Math.min(S.bird.rows*S.bird.unit*.42+S.baseY,7);
     camFocus.lerp(_p.set(0,h,S.mode==='win'&&winBird&&S.bird.build?3:0),Math.min(1,dt*2.2));
     camera.position.set(camFocus.x+Math.sin(a)*d,camFocus.y+S.camH*lerp(.55,.26,near),camFocus.z+Math.cos(a)*d);camera.lookAt(camFocus);return;
   }
@@ -681,15 +981,16 @@ function updateFriends(dt){
   friends.forEach(f=>{
     const u=f.u,dx=u.tx-f.position.x,dz=u.tz-f.position.z,d=Math.hypot(dx,dz);
     f.visible=S.mode==='play'||S.mode==='menu'||f.position.distanceTo(camera.position)>15; // не загораживают главный момент
-    if(u.fixed){f.plane.position.y=Math.abs(Math.sin(S.time*6+u.ph))*.5;faceCamera(f);return}
+    tick(f,dt);
+    if(u.fixed){faceCamera(f);return}
     if(d<.3){
-      f.plane.position.y=0;u.rest-=dt;
+      u.rest-=dt;
       if(u.rest<=0){const s=freeSpot(Math.random);u.tx=s.x;u.tz=s.z;u.rest=1+Math.random()*4}
     }else{
       f.position.x+=dx/d*2.6*dt;f.position.z+=dz/d*2.6*dt;
-      f.plane.position.y=Math.abs(Math.sin(S.time*7+u.ph))*.55;
       turn(f,dx*cx+dz*sx<0);
     }
+    if(u.fly)f.plane.position.y=2.6+Math.sin(S.time*2+u.ph)*.5; // птицы порхают над землёй
     faceCamera(f);
   });
 }
@@ -699,7 +1000,8 @@ function setHero(real){
 function updateHero(){
   if(!heroSprite.visible)return;
   const p=player.position,moving=S.mode==='play'&&(Math.abs(S.ix)>.05||Math.abs(S.iz)>.05);
-  heroSprite.position.set(p.x,p.y,p.z);heroSprite.plane.position.y=moving?Math.abs(Math.sin(S.time*11))*.3:0;
+  heroSprite.position.set(p.x,p.y,p.z);
+  if(moving)tick(heroSprite,S.dt);else if(S.mode==='play')setFrame(heroSprite,0);else tick(heroSprite,S.dt);
   if(Math.abs(S.ix)>.1)turn(heroSprite,S.ix>0); // на картинке герой бежит вправо
   faceCamera(heroSprite);
 }
@@ -718,13 +1020,14 @@ function showPanel(img,title,stars,text,btn){
   $('winText').textContent=text;$('nextBtn').textContent=btn;$('win').hidden=false;
 }
 function showWin(){
-  const b=S.bird,stars=S.pendingStars,hint=stars<3?'Гони кота раньше, чем он прыгнет на подставку, и будет три звезды.':'Кот ни разу не добрался до подставки!';
-  if(b.build){
-    const a=ANIMALS[b.home];
-    showPanel(`art/${a.art}.webp`,`${a.name} ${S.lvl===9?'новосёл!':'дома!'}`,stars,S.lvl===9?'Все домики построены!':hint,S.lvl===9?'Конец сказки':'Дальше');
+  const b=S.bird,stars=S.pendingStars,hint=stars<3?'Гони вредителя раньше, чем он прыгнет на подставку, и будет три звезды.':'Никто не добрался до подставки!';
+  if(b.boss)showPanel('art/barmaley-full.webp','Бармалей заточён!',stars,'Теперь он никого не заколдует. Лес свободен!','Конец сказки');
+  else if(b.build){
+    const a=ANIMALS[b.home],last=S.lvl===TOWER-1;
+    showPanel(`art/${a.art}.webp`,`${a.name} дома!`,stars,last?'Все домики готовы. Осталось поймать Бармалея: построй для него башню!':hint,'Дальше');
   }else{
-    const wake=S.lvl===4&&!save.hero;
-    showPanel(`art/${b.art}.webp`,`${b.name} спасён!`,stars,wake?'Все зверята спасены! Они что-то задумали…':hint,'Дальше');
+    const wake=S.lvl===R_N-1&&!save.hero;
+    showPanel(`art/${b.art}.webp`,`${b.name} ${b.she?'спасена':'спасён'}!`,stars,wake?'Все жители леса спасены! Они что-то задумали…':hint,'Дальше');
   }
 }
 const glowSprite=(()=>{
@@ -736,15 +1039,29 @@ function flash(t,cy){
 }
 function updateWin(dt){
   S.winT+=dt;const b=S.bird,t=S.winT,prev=t-dt,hit=x=>prev<x&&t>=x,cy=S.baseY+b.rows*b.unit*.45,cols=Object.values(b.pal);
+  if(b.boss){ // Бармалея затягивает в башню, и он остаётся за решёткой
+    if(t<1.2&&Math.random()<.5)burst((Math.random()-.5)*9,S.baseY+Math.random()*9,(Math.random()-.5)*5,cols,3,5);
+    if(hit(.5))ghost.visible=false;
+    if(hit(.8)){winBird=makeSprite('barmaley-full',6.2);world.add(winBird);winBird.position.set(0,0,R_PLINTH+3);sfx.grumble();burst(0,3,R_PLINTH+3,[0xc9a6ff,0xffffff],40,7)}
+    if(winBird){
+      const k=soft(1.6,3.2,t),u=b.unit,topY=S.baseY+21*u*.85-2;
+      winBird.position.set(0,lerp(0,topY,k),lerp(R_PLINTH+3,4.6*u,k));winBird.scale.setScalar(lerp(1,.62,k));
+      winBird.shadow.visible=k<.1;tick(winBird,dt);faceCamera(winBird);
+      if(hit(1.6))sfx.magic();
+      if(hit(3.3)){sfx.win();burst(0,topY+2,3,[0xffc928,0xffffff,0xd7263d],60,9)}
+    }
+    if(t>5&&$('win').hidden)showWin();
+    return;
+  }
   if(b.build){ // домик: хозяин прибегает и радуется
     if(t<1.2&&Math.random()<.5)burst((Math.random()-.5)*9,S.baseY+Math.random()*7,(Math.random()-.5)*5,cols,3,5);
     if(hit(.5))ghost.visible=false;
     if(hit(.9)){
-      const a=ANIMALS[b.home];winBird=makeSprite(a.art,a.aspect,a.tall*.75);world.add(winBird);
+      const a=ANIMALS[b.home];winBird=makeSprite(a.art,a.tall*.8);world.add(winBird);
       winBird.position.set(0,0,R_PLINTH+3);burst(0,1.5,R_PLINTH+3,[0xffffff,0xffe27a],40,7);sfx.sing(a);
     }
-    if(winBird){winBird.plane.position.y=Math.abs(Math.sin(t*5))*.8;faceCamera(winBird)}
-    if(t>3.4&&$('win').hidden)showWin();
+    if(winBird){tick(winBird,dt);faceCamera(winBird)}
+    if(t>3.8&&$('win').hidden)showWin();
     return;
   }
   // кирпичи дрожат и рассыпаются в искры
@@ -761,32 +1078,24 @@ function updateWin(dt){
   flash(t,cy);
   if(hit(WIN.bird)){
     S.bricks.forEach(o=>o.mesh.visible=false);ghost.visible=false;
-    winBird=makeSprite(b.art,b.aspect,b.tall);world.add(winBird);winBird.position.y=S.baseY;
+    winBird=makeSprite(b.art,b.tall);world.add(winBird);winBird.position.y=S.baseY;
     burst(0,cy,0,[...cols,0xffffff],70,10);
   }
   if(!winBird)return;
   const g=winBird,k=t-WIN.bird;
   g.scale.setScalar(Math.min(1,.3+k*2.5)*(1+Math.sin(Math.min(k/.45,1)*3.14)*.14));
-  if(t<WIN.leave){
-    g.plane.position.y=k>1.1?Math.abs(Math.sin(k*5))*.5:0;
-    turn(g,Math.sin(k*1.6)>-.6);
-    if(hit(WIN.bird+.8))sfx.sing(b);
-  }else{ // спрыгивает с подставки к герою
-    const q=Math.min((t-WIN.leave)/1.1,1);
-    g.position.set(0,lerp(S.baseY,0,q),lerp(0,R_PLINTH+2.6,q));
-    g.plane.position.y=Math.sin(q*3.14)*2+(q>=1?Math.abs(Math.sin(t*5))*.5:0);
-  }
-  faceCamera(g);
+  if(hit(WIN.bird+.8))sfx.sing(b);
+  tick(g,dt);faceCamera(g);
   if(t>WIN.panel&&$('win').hidden)showWin();
 }
 function startWake(){ // герой становится настоящим
   $('win').hidden=$('menu').hidden=true;
-  buildWorld(4);S.mode='wake';S.winT=0;arrow.visible=false;
+  buildWorld(R_N-1);S.mode='wake';S.winT=0;arrow.visible=false;
   S.bricks.forEach(o=>o.mesh.visible=false);ghost.visible=false;S.cats.forEach(c=>c.state='gone');
   friends.forEach(f=>world.remove(f));friends=[];
-  ANIMALS.forEach((a,n)=>{const f=addFriend(a),u=1.45+n*.84;f.position.set(Math.sin(u)*(R_PLINTH+2.2),0,Math.cos(u)*(R_PLINTH+2.2));f.u.fixed=true});
+  ANIMALS.filter((a,n)=>n%2===0).forEach((a,n)=>{const f=addFriend(a),u=1.45+n*.84;f.position.set(Math.sin(u)*(R_PLINTH+2.2),0,Math.cos(u)*(R_PLINTH+2.2));f.u.fixed=true});
   player.position.set(0,S.baseY,0);player.rotation.y=0;setHero(false);S.camD=19;S.camH=13.5;camFocus.set(0,3,0);
-  toast('Зверята берутся за лапки и говорят волшебные слова…',false,3);
+  toast('Жители леса говорят волшебные слова…',false,3);
 }
 function updateWake(dt){
   S.winT+=dt;const t=S.winT,prev=t-dt,hit=x=>prev<x&&t>=x,cy=S.baseY+1.6;
@@ -795,23 +1104,22 @@ function updateWake(dt){
   flash(t,cy);
   if(hit(WIN.bird)){save.hero=true;persist();setHero(true);burst(0,cy,0,[0xd7263d,0x1f6fd1,0xffc928,0xffffff],70,10);sfx.win()}
   heroSprite.scale.setScalar(t>WIN.bird?Math.min(1,.3+(t-WIN.bird)*2.5):1);
-  if(t>WIN.bird+.6)heroSprite.plane.position.y=Math.abs(Math.sin(t*5))*.5;
   if(t>4.2&&$('win').hidden){
     S.mode='wakeDone';
-    showPanel('art/hero.webp','Ты ожил!',0,'Теперь ты настоящий! Но Бармалей разрушил дома зверят. Им негде жить. Построим домики!','Строить');
+    showPanel('art/hero.webp','Ты ожил!',0,'Теперь ты настоящий! Но Бармалей разрушил домики в лесу. Жителям негде жить. Построим новые!','Строить');
   }
 }
 
 /* ---------- Экраны ---------- */
 const TALE={
  intro:[['bird','В волшебном лесу жила маленькая певчая птичка.'],
-  ['flock','С ней жили стаи птиц и все зверята. Они дружили и были счастливы.'],
-  ['barmaley','Но злой колдун Бармалей им позавидовал! Он взмахнул посохом, и все зверята превратились в кирпичики.'],
-  ['kot','А кот Бармалея, Кот Бандит, раскидал кирпичики по всему острову.'],
-  ['hero-lego','Колдовство задело и тебя: ты тоже кирпичный! Но только ты можешь спасти зверят. Собери их и оживи!']],
- end:[['village','Вы вместе построили домики для всех зверят. Над деревней снова поют птицы.'],
-  ['kot','Кот Бандит понял, что с друзьями веселее, и больше ничего не разбрасывает.'],
-  ['barmaley','А Бармалей обиделся и ушёл далеко-далеко. Колдовство разрушено. Конец!']]
+  ['flock','С ней жили стаи птиц, зверята, единороги и маленькие дракончики. Все дружили и были счастливы.'],
+  ['barmaley','Но злой колдун Бармалей им позавидовал! Он взмахнул посохом, и все жители леса превратились в кирпичики.'],
+  ['kot','А его кот, Кот Бандит, раскидал кирпичики по всему лесу.'],
+  ['hero-lego','Колдовство задело и тебя: ты тоже кирпичный! Но только ты можешь всех спасти. Собери их и оживи!']],
+ end:[['tower','Бармалей заперт в высокой кирпичной башне. Оттуда ему не выбраться, и больше он никого не заколдует!'],
+  ['village','В лесу снова поют птицы, а у всех зверят есть свои домики.'],
+  ['kot','Кот Бандит понял, что с друзьями веселее, и больше ничего не разбрасывает. Конец!']]
 };
 let taleQueue=[],taleDone=null;
 function tale(name,done){
@@ -830,7 +1138,7 @@ function thumb(b,cv,locked){
 }
 function isOpen(i){return i===0||!!save.stars[i-1]}
 function renderCards(){
-  [['cards',ANIMALS,0],['houses',HOUSES,5]].forEach(([id,list,from])=>{
+  [['cards',ANIMALS,0],['houses',HOUSES,R_N]].forEach(([id,list,from])=>{
     const box=$(id);box.innerHTML='';
     list.forEach((b,n)=>{
       const i=from+n,open=isOpen(i),got=save.stars[i]||0,btn=document.createElement('button');
@@ -844,7 +1152,7 @@ function renderCards(){
 }
 function openLevel(i){
   if(i===0&&!save.intro){save.intro=true;persist();tale('intro',()=>startLevel(0));return}
-  if(i>=5&&!save.hero){startWake();return}
+  if(i>=R_N&&!save.hero){startWake();return}
   startLevel(i);
 }
 function showMenu(){
@@ -859,16 +1167,16 @@ function startLevel(i){
   joyRest();drawHud();drawHands();
   const b=S.bird;
   toast(i===0?(touchDevice?'Води пальцем по экрану, чтобы бежать. Неси детальки на подставку!':'Подбирай детальки и неси на подставку. За раз можно взять 4.'):
-    b.build?`Построй: ${b.name}! Кот Бандит всё ещё хулиганит.`:`Спаси: ${b.name}! Жёлтая стрелка покажет, куда бежать.`,false,4);
+    b.boss?'Построй башню! Бармалей попробует её сломать: гони его прочь!':b.build?`Построй: ${b.name}! Кот Бандит всё ещё хулиганит.`:`Спаси: ${b.name}! Жёлтая стрелка покажет, куда бежать.`,false,4);
   setTimeout(()=>{if(S.mode==='play')$('keys').hidden=true},9000);
 }
 $('menuBtn').onclick=showMenu;
 $('winMenuBtn').onclick=showMenu;
 $('taleBtn').onclick=()=>{audio();tale('intro',showMenu)};
 $('nextBtn').onclick=()=>{
-  if(S.mode==='wakeDone')startLevel(5);
-  else if(S.lvl===4&&!save.hero)startWake();
-  else if(S.lvl===9)tale('end',showMenu);
+  if(S.mode==='wakeDone')startLevel(R_N);
+  else if(S.lvl===R_N-1&&!save.hero)startWake();
+  else if(S.lvl===TOWER)tale('end',showMenu);
   else startLevel(S.lvl+1);
 };
 function drawSound(){$('soundBtn').textContent=soundOn?'🔊':'🔇'}
@@ -893,14 +1201,14 @@ function frame(now){
   const raw=(now-last)/1000;last=now;watchSpeed(raw);step(Math.min(raw,.05));
 }
 function step(dt){
-  S.time+=dt;
+  S.time+=dt;S.dt=dt;
   if(S.mode==='play'){updatePlayer(dt);S.cats.forEach(c=>updateCat(c,dt))}
   if(S.mode==='win')updateWin(dt);
   if(S.mode==='wake'||S.mode==='wakeDone')updateWake(dt);
   updateBricks(dt);updateArrow();updateCamera(dt);updateFriends(dt);updateHero();updateParticles(dt);
   renderer.render(scene,camera);
 }
-window.__kp={S,LEVELS,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,friends:()=>friends};
+window.__kp={S,LEVELS,R_N,TOWER,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,friends:()=>friends};
 showMenu();
 requestAnimationFrame(frame);
 </script>
