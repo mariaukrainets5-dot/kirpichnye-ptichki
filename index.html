@@ -54,6 +54,16 @@ button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .screen>*{flex:none}
 h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);line-height:1.05;margin:auto 0 0;text-align:center;color:#fff;text-shadow:0 4px 0 var(--red),0 8px 0 rgba(0,0,0,.25);text-wrap:balance}
 .lead{margin:0;color:#fff;text-align:center;font-size:clamp(16px,3.8vw,20px);max-width:34em;text-shadow:0 1px 4px rgba(0,0,0,.6);text-wrap:balance}
+.skill{font-size:13px;line-height:1.2;text-align:center;font-weight:600}
+#pick{background:rgba(19,27,48,.82)}
+#pickGrid{margin-bottom:6px}
+#forestBar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;overflow-x:auto;padding:10px max(12px,env(safe-area-inset-left,0px)) calc(10px + env(safe-area-inset-bottom,0px));background:rgba(19,27,48,.78);-webkit-overflow-scrolling:touch}
+.tool2{flex:none;width:68px;height:68px;border-radius:8px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px;font-size:12px;line-height:1.05;font-weight:800;box-shadow:inset 0 -3px 0 rgba(0,0,0,.16)}
+.tool2 i{width:30px;height:24px;border-radius:4px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
+.tool2 img{height:32px;max-width:48px;object-fit:contain}
+.tool2.on{outline:3px solid var(--yellow);background:#fff4c7}
+.tool2:disabled{background:#c9cfdb;color:#596173}
+.tool2:disabled img{filter:grayscale(1) opacity(.5)}
 .part{font-family:var(--display);font-weight:400;color:#fff;font-size:clamp(15px,3.6vw,20px);margin:6px 0 0;text-shadow:0 2px 4px rgba(0,0,0,.6)}
 .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:18px 12px;width:min(100%,900px);padding-top:8px}
 #houses{margin-bottom:auto}
@@ -94,16 +104,23 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);l
 <div id="hands" hidden></div>
 <div id="keys" hidden>Стрелки или WASD: бежать. Мышь: повернуть вид.</div>
 <div id="toast"></div>
+<div id="forestBar" hidden></div>
 <div id="joy" hidden><div id="nub"></div></div>
 
 <section id="menu" class="screen">
   <h1>Кирпичный лес</h1>
   <p class="lead">Злой колдун Бармалей превратил жителей волшебного леса в кирпичики. Собери всех, оживи и запри Бармалея в башне!</p>
-  <button id="taleBtn" class="brick big alt">Смотреть сказку</button>
+  <div class="row"><button id="taleBtn" class="brick big alt">Смотреть сказку</button><button id="forestBtn" class="brick big">Мой лес</button></div>
   <h2 class="part">Спаси жителей леса</h2>
   <div id="cards" class="grid"></div>
   <h2 class="part">Построй домики и башню</h2>
   <div id="houses" class="grid"></div>
+</section>
+
+<section id="pick" class="screen" hidden>
+  <h2 class="part">Кого взять с собой?</h2>
+  <button id="pickNone" class="brick big alt">Пойду один</button>
+  <div id="pickGrid" class="grid"></div>
 </section>
 
 <section id="story" class="screen" hidden>
@@ -430,6 +447,13 @@ const HOUSES=[
 ];
 HOUSES.forEach(h=>{if(h.home)h.home=ANIMALS.findIndex(a=>a.id===h.home)});
 const LEVELS=[...ANIMALS,...HOUSES],R_N=ANIMALS.length,TOWER=LEVELS.length-1;
+const SKILLS={
+ zayka:'С ним ты бегаешь быстрее',snegir:'Показывает все детальки',medved:'Сторожит: кот раскидает только одну деталь',
+ flamingo:'Достаёт детальки издалека',slon:'Несёт 7 деталек вместо 4',pavlin:'Пугает хвостом: вредители бегут медленнее',
+ zhiraf:'Видит вредителя заранее',edinorog:'Сам наколдует детальку на подставку',lisa:'Хитрит: вредитель приходит реже',
+ drakon:'Отпугивает вредителя издалека',zhar:'Раскиданные детальки сами летят назад'
+};
+const FOREST={id:'les',theme:'garden',cats:0,free:true,pal:{},bricks:[],chunks:[],rows:1,cols:1,unit:.6};
 
 const THEMES={
  snow:{sky:0xbfd9f2,a:0xf6fafd,b:0xe2ecf6,plinth:0x5b7fa6,hemi:.95,sun:.75,decor:['fir','fir','rock']},
@@ -648,11 +672,11 @@ const DECOR={
 };
 
 /* ---------- Состояние ---------- */
-const save={stars:[],hero:false,intro:false};
+const save={stars:[],hero:false,intro:false,forest:[]};
 try{Object.assign(save,JSON.parse(localStorage.getItem('kirpich-les-v1')||'{}'))}catch(e){}
 const persist=()=>{try{localStorage.setItem('kirpich-les-v1',JSON.stringify(save))}catch(e){}};
 const S={mode:'menu',lvl:0,bird:null,bricks:[],carried:[],cats:[],hits:0,shoos:0,yaw:0,camD:21,camH:15,time:0,dropCd:0,winT:0};
-const CAP=4;
+const cap=()=>S.helper==='slon'?7:4;
 let world=new THREE.Group();scene.add(world);
 let obstacles=[],friends=[],winBird=null,ghost=null;
 
@@ -694,7 +718,7 @@ function clearWorld(){
 }
 function buildWorld(i){
   clearWorld();
-  const b=LEVELS[i],t=THEMES[b.theme],rand=rng(4242+i*17);
+  const b=i==='forest'?FOREST:LEVELS[i],t=THEMES[b.theme],rand=rng(b.free?7:4242+i*17);
   S.lvl=i;S.bird=b;S.hits=0;S.shoos=0;
   scene.background=new THREE.Color(t.sky);scene.fog=new THREE.Fog(t.sky,48,92);FOG.fogColor.value.set(t.sky);
   hemi.intensity=t.hemi;sun.intensity=t.sun;
@@ -723,13 +747,13 @@ function buildWorld(i){
 
   // Подставка
   const pl=[{geo:new THREE.CylinderGeometry(R_PLINTH-.25,R_PLINTH,.5,48),m:at(0,.25,0),c:t.plinth},{geo:new THREE.CylinderGeometry(R_PLINTH-1,R_PLINTH-.8,.3,48),m:at(0,.65,0),c:0xffffff}];
-  const pm=new THREE.Mesh(bake(pl),MAT);pm.receiveShadow=true;pm.castShadow=true;pm.userData.temp=true;world.add(pm);
+  const pm=new THREE.Mesh(bake(pl),MAT);pm.receiveShadow=true;pm.castShadow=true;pm.userData.temp=true;pm.visible=!b.free;world.add(pm);
   S.baseY=.8;
-  obstacles.push({x:0,z:0,r:R_PLINTH});
+  if(!b.free)obstacles.push({x:0,z:0,r:R_PLINTH});
 
   // Деревья и всё остальное
   const it=[];
-  for(let n=0,tries=0;n<(b.theme==='garden'?24:15)&&tries<400;tries++){
+  for(let n=0,tries=0;n<(b.free?0:b.theme==='garden'?24:15)&&tries<400;tries++){
     const a=rand()*6.28,r=15+rand()*11,x=Math.cos(a)*r,z=Math.sin(a)*r;
     if(Math.abs(x)<4&&z>6&&z<16)continue;
     if(obstacles.some(o=>Math.hypot(o.x-x,o.z-z)<o.r+2.6))continue;
@@ -737,7 +761,7 @@ function buildWorld(i){
     if(cr)obstacles.push({x,z,r:cr});
     n++;
   }
-  const dm=new THREE.Mesh(bake(it),MAT_MATTE);dm.castShadow=true;dm.receiveShadow=true;dm.userData.temp=true;world.add(dm);
+  if(it.length){const dm=new THREE.Mesh(bake(it),MAT_MATTE);dm.castShadow=true;dm.receiveShadow=true;dm.userData.temp=true;world.add(dm)}
   if(t.stars){
     const pts=[];for(let n=0;n<420;n++){const a=rand()*6.28,e=rand()*1.4+.05,r=120;pts.push(Math.cos(a)*Math.cos(e)*r,Math.sin(e)*r,Math.sin(a)*Math.cos(e)*r)}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
@@ -760,20 +784,27 @@ function buildWorld(i){
     const mesh=new THREE.Mesh(ch.geo,b.glow?MAT_GLOW:MAT);mesh.castShadow=true;
     const s=freeSpot(rand),o={ch,mesh,state:'ground',x:s.x,z:s.z,phase:rand()*6,slot:ch.center.clone().add(new THREE.Vector3(0,S.baseY,0)),t:0,gy:ch.h/2+.3};
     mesh.position.set(s.x,o.gy,s.z);mesh.rotation.y=rand()*3;world.add(mesh);S.bricks.push(o);
+    if(S.helper==='snegir'){o.mark=new THREE.Mesh(markGeo,markMat);world.add(o.mark)}
   });
 
   // Последние спасённые гуляют по острову (всех сразу телефон не потянет)
-  ANIMALS.filter((a,n)=>save.stars[n]&&n!==i&&n!==b.home).slice(-5).forEach(a=>addFriend(a,rand));
+  if(!b.free){
+    ANIMALS.filter((a,n)=>save.stars[n]&&n!==i&&n!==b.home&&a.id!==S.helper).slice(-5).forEach(a=>addFriend(a,rand));
+    const h=ANIMALS.find(a=>a.id===S.helper);
+    if(h){const f=addFriend(h);f.u.follow=true;f.position.set(2,0,11)}
+  }
 
   for(let n=0;n<b.cats;n++){
     const boss=b.boss&&n===0,mesh=boss?makeSprite('barmaley-full',6.2):makeCat();
     if(boss){mesh.visible=false;scene.add(mesh)}
-    S.cats.push({mesh,boss,state:'wait',timer:14+n*9,t:0,dir:0});
+    S.cats.push({mesh,boss,state:'wait',timer:(14+n*9)*(S.helper==='lisa'?1.6:1),t:0,dir:0});
   }
   player.position.set(0,0,9.5);player.rotation.y=0;player.visible=true;
   S.yaw=0;S.camD=Math.min(28,Math.max(19,b.rows*b.unit*2+9));S.camH=S.camD*.72;
   camFocus.set(0,0,9.5);
 }
+const markGeo=new THREE.ConeGeometry(.5,1,4);markGeo.rotateX(Math.PI);
+const markMat=new THREE.MeshBasicMaterial({color:0xffe27a,fog:false});
 function addFriend(a,rand=Math.random){
   const f=makeSprite(a.art,a.tall*.56),s=freeSpot(rand);
   f.position.set(s.x,0,s.z);f.u={tx:s.x,tz:s.z,rest:rand()*3,ph:rand()*6,fly:a.bird};world.add(f);friends.push(f);return f;
@@ -834,7 +865,8 @@ addEventListener('keyup',e=>{const k=KEYMAP[e.code];if(k)keys.delete(k)});
 addEventListener('blur',()=>keys.clear());
 canvas.addEventListener('pointerdown',e=>{
   audio();
-  if(e.pointerType==='touch'&&joy.id===null&&S.mode==='play'){ // первый палец бежит, второй крутит вид
+  tap={id:e.pointerId,x:e.clientX,y:e.clientY,t:performance.now()};
+  if(e.pointerType==='touch'&&joy.id===null&&(S.mode==='play'||S.mode==='forest')){ // первый палец бежит, второй крутит вид
     joy.id=e.pointerId;joy.ox=e.clientX;joy.oy=e.clientY;joy.x=joy.y=0;
     const j=$('joy');j.style.left=e.clientX+'px';j.style.top=e.clientY+'px';j.classList.remove('rest');
   }else if(!drag)drag={id:e.pointerId,x:e.clientX};
@@ -849,17 +881,21 @@ canvas.addEventListener('pointermove',e=>{
 });
 function joyRest(){ // в покое джойстик стоит внизу и подсказывает, куда нажимать
   joy.id=null;joy.x=joy.y=0;const j=$('joy');
-  j.style.left='50%';j.style.top=(innerHeight-118)+'px';j.classList.add('rest');$('nub').style.transform='';
-  j.hidden=!(touchDevice&&S.mode==='play');
+  j.style.left='50%';j.style.top=(innerHeight-(S.mode==='forest'?186:118))+'px';j.classList.add('rest');$('nub').style.transform='';
+  j.hidden=!(touchDevice&&(S.mode==='play'||S.mode==='forest'));
 }
-const endPtr=e=>{if(e.pointerId===joy.id)joyRest();if(drag&&e.pointerId===drag.id)drag=null};
+let tap=null;
+const endPtr=e=>{
+  if(tap&&tap.id===e.pointerId&&e.type==='pointerup'&&S.mode==='forest'&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<14&&performance.now()-tap.t<400)forestTap(e.clientX,e.clientY);
+  if(e.pointerId===joy.id)joyRest();if(drag&&e.pointerId===drag.id)drag=null;
+};
 canvas.addEventListener('pointerup',endPtr);canvas.addEventListener('pointercancel',endPtr);
 
 /* ---------- Игровая логика ---------- */
 let toastTimer=0;
 function toast(msg,bad,sec=2.6){const t=$('toast');t.textContent=msg;t.className='show'+(bad?' bad':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.className=bad?'bad':''},sec*1000)}
 function drawHands(){
-  $('hands').innerHTML=Array.from({length:CAP},(_,i)=>`<div class="slot${i<S.carried.length?' on':''}"></div>`).join('');
+  $('hands').innerHTML=Array.from({length:cap()},(_,i)=>`<div class="slot${i<S.carried.length?' on':''}"></div>`).join('');
 }
 function drawHud(){
   const total=S.bricks.length,n=S.bricks.filter(b=>b.state==='placed').length;
@@ -872,10 +908,12 @@ function flyTo(o,tx,ty,tz,dur,arc,after){
   o.from=o.mesh.position.clone();o.to=new THREE.Vector3(tx,ty,tz);o.rx=(Math.random()-.5)*7;o.ry=o.mesh.rotation.y;
 }
 function pickUp(o){
-  o.state='carried';S.carried.push(o);sfx.pick();burst(o.mesh.position.x,o.mesh.position.y,o.mesh.position.z,[o.ch.color],4,3);drawHands();
+  o.state='carried';o.back=0;S.carried.push(o);sfx.pick();burst(o.mesh.position.x,o.mesh.position.y,o.mesh.position.z,[o.ch.color],4,3);drawHands();
 }
 function dropOne(){
-  const o=S.carried.shift();drawHands();
+  const o=S.carried.shift();drawHands();toSlot(o);
+}
+function toSlot(o){ // деталь летит на своё место
   flyTo(o,o.slot.x,o.slot.y,o.slot.z,.5,3,()=>{
     o.state='placed';o.mesh.position.copy(o.slot);o.mesh.rotation.set(0,0,0);o.pop=1;sfx.snap();drawHud();
     if(S.bricks.every(b=>b.state==='placed'))startWin();
@@ -884,10 +922,10 @@ function dropOne(){
 }
 function scatter(cat){
   const placed=S.bricks.filter(b=>b.state==='placed').sort((a,b)=>b.slot.y-a.slot.y);
-  const n=Math.min(placed.length,2+Math.min(S.lvl,2)),pool=placed.slice(0,Math.max(n,Math.ceil(placed.length*.5)));
+  const n=Math.min(placed.length,S.helper==='medved'?1:2+Math.min(S.lvl,2)),pool=placed.slice(0,Math.max(n,Math.ceil(placed.length*.5)));
   for(let i=0;i<n;i++){
     const o=pool.splice(Math.random()*pool.length|0,1)[0],s=freeSpot(Math.random);
-    flyTo(o,s.x,o.gy,s.z,.9+Math.random()*.4,7+Math.random()*4,()=>{o.state='ground';o.x=s.x;o.z=s.z;o.mesh.rotation.set(0,Math.random()*3,0)});
+    flyTo(o,s.x,o.gy,s.z,.9+Math.random()*.4,7+Math.random()*4,()=>{o.state='ground';o.x=s.x;o.z=s.z;o.mesh.rotation.set(0,Math.random()*3,0);if(S.helper==='zhar')o.back=S.time+5});
   }
   if(n){S.hits++;sfx.scatter();toast(cat.boss?'Бармалей раскидал детальки! Собирай заново.':'Бандит раскидал детальки! Собирай заново.',true);burst(0,S.baseY+2,0,[0xffffff,0xffc928],16,7);drawHud()}
 }
@@ -905,17 +943,17 @@ function updateCat(c,dt){
       c.state='peek';c.t=0;c.den=a;c.boss?sfx.grumble():sfx.meow();toast(c.boss?'Бармалей идёт! Не дай ему сломать башню!':'Кот Бандит идёт! Беги и прогони его!',true);
     }
   }else if(c.state==='peek'){
-    p.y=Math.abs(Math.sin(c.t*9))*.35;if(c.t>1.4){p.y=0;c.state='run'}
+    p.y=Math.abs(Math.sin(c.t*9))*.35;if(c.t>(S.helper==='zhiraf'?4.5:1.4)){p.y=0;c.state='run'}
   }else if(c.state==='run'){
-    if(go(0,0,4.4)<R_PLINTH+1.7){c.state='swipe';c.t=0}
+    if(go(0,0,S.helper==='pavlin'?2.8:4.4)<R_PLINTH+1.7){c.state='swipe';c.t=0}
   }else if(c.state==='swipe'){
     p.y=Math.sin(Math.min(c.t/.5,1)*Math.PI)*1.6;
     if(c.t>.5){p.y=0;scatter(c);c.state='flee';c.t=0}
   }else if(c.state==='flee'){
     const tx=Math.cos(c.den)*(R_WORLD+6),tz=Math.sin(c.den)*(R_WORLD+6);
-    if(go(tx,tz,10)<1||c.t>7){m.visible=false;c.state='wait';c.timer=S.bird.catEvery*(.85+Math.random()*.3)}
+    if(go(tx,tz,10)<1||c.t>7){m.visible=false;c.state='wait';c.timer=S.bird.catEvery*(.85+Math.random()*.3)*(S.helper==='lisa'?1.6:1)}
   }
-  if((c.state==='run'||c.state==='peek')&&Math.hypot(p.x-player.position.x,p.z-player.position.z)<2.1){
+  if((c.state==='run'||c.state==='peek')&&Math.hypot(p.x-player.position.x,p.z-player.position.z)<(S.helper==='drakon'?7:2.1)){
     p.y=0;c.state='flee';c.t=0;c.den=Math.atan2(p.z,p.x);S.shoos++;sfx.shoo();toast(c.boss?'Бармалей убежал! Строй скорее!':'Кыш! Кот Бандит убежал!');
     burst(p.x,1.2,p.z,[0xf08a24,0xffffff,0xffc928],14,5);
   }
@@ -927,7 +965,7 @@ function updatePlayer(dt){
   S.ix=ix;S.iz=iz;
   const l=Math.hypot(ix,iz),p=player.position;
   if(l>.05){
-    const k=Math.min(l*1.5,1)/l,sp=8.6;ix*=k;iz*=k;
+    const k=Math.min(l*1.5,1)/l,sp=S.helper==='zayka'?11.2:8.6;ix*=k;iz*=k;
     const c=Math.cos(S.yaw),s=Math.sin(S.yaw),dx=ix*c+iz*s,dz=-ix*s+iz*c;
     p.x+=dx*sp*dt;p.z+=dz*sp*dt;
     let want=Math.atan2(-dx,-dz),d=want-player.rotation.y;d=Math.atan2(Math.sin(d),Math.cos(d));player.rotation.y+=d*Math.min(1,dt*13);
@@ -940,9 +978,12 @@ function updateBricks(dt){
   const p=player.position;
   S.bricks.forEach(o=>{
     const m=o.mesh;
+    if(o.mark&&o.state!=='ground')o.mark.visible=false;
     if(o.state==='ground'){
       m.position.set(o.x,o.gy+Math.sin(S.time*2.4+o.phase)*.12,o.z);m.rotation.y+=dt*1.1;
-      if(S.mode==='play'&&S.carried.length<CAP&&Math.hypot(o.x-p.x,o.z-p.z)<2.2)pickUp(o);
+      if(S.mode==='play'&&S.carried.length<cap()&&Math.hypot(o.x-p.x,o.z-p.z)<(S.helper==='flamingo'?5:2.2))pickUp(o);
+      if(o.back&&S.time>o.back&&S.mode==='play'){o.back=0;o.mesh.scale.setScalar(1);toSlot(o)}
+      if(o.mark){o.mark.visible=true;o.mark.position.set(o.x,o.gy+1.7+Math.sin(S.time*5+o.phase)*.25,o.z);o.mark.rotation.y=S.time*2}
     }else if(o.state==='fly'){
       o.t+=dt;const k=Math.min(o.t/o.dur,1),e=k*k*(3-2*k);
       m.position.lerpVectors(o.from,o.to,e);m.position.y+=Math.sin(k*Math.PI)*o.arc;
@@ -967,7 +1008,7 @@ function updateArrow(){
   let tx,tz,col=0xffc928;
   const left=S.bricks.filter(o=>o.state==='ground');
   if(cat){tx=cat.mesh.position.x;tz=cat.mesh.position.z;col=0xd7263d}
-  else if(S.carried.length>=CAP||(!left.length&&S.carried.length)){tx=0;tz=0;col=0x2fa84f}
+  else if(S.carried.length>=cap()||(!left.length&&S.carried.length)){tx=0;tz=0;col=0x2fa84f}
   else if(left.length){let best=1e9;left.forEach(o=>{const d=Math.hypot(o.x-p.x,o.z-p.z);if(d<best){best=d;tx=o.x;tz=o.z}})}
   else{arrow.visible=false;return}
   const a=Math.atan2(tx-p.x,tz-p.z);arrow.visible=true;arrow.material.color.setHex(col);
@@ -993,9 +1034,14 @@ function updateFriends(dt){
   const cx=Math.cos(S.yaw),sx=-Math.sin(S.yaw),pl=player.position;
   friends.forEach((f,n)=>{
     const u=f.u,dx=u.tx-f.position.x,dz=u.tz-f.position.z,d=Math.hypot(dx,dz),p=f.position;
-    f.visible=S.mode==='play'||S.mode==='menu'||!!u.fixed; // в момент победы на сцене только спасённый
+    f.visible=S.mode==='play'||S.mode==='menu'||S.mode==='forest'||!!u.fixed; // в момент победы на сцене только спасённый
     tick(f,dt);
     if(u.fixed){faceCamera(f);return}
+    if(u.follow){ // помощник бежит рядом с героем
+      const ft=Math.hypot(pl.x-p.x,pl.z-p.z);u.tx=pl.x;u.tz=pl.z;
+      if(ft>3.4){const v=Math.min(ft*2.6,12);p.x+=(pl.x-p.x)/ft*v*dt;p.z+=(pl.z-p.z)/ft*v*dt;turn(f,(pl.x-p.x)*cx+(pl.z-p.z)*sx<0)}
+      pushOut(p,f.r);if(u.fly)f.plane.position.y=2.6+Math.sin(S.time*2+u.ph)*.5;faceCamera(f);return;
+    }
     if(d<.4){
       u.rest-=dt;
       if(u.rest<=0){const s=freeSpot(Math.random);u.tx=s.x;u.tz=s.z;u.rest=1+Math.random()*4;u.walk=0}
@@ -1022,9 +1068,9 @@ function setHero(real){
 }
 function updateHero(){
   if(!heroSprite.visible)return;
-  const p=player.position,moving=S.mode==='play'&&(Math.abs(S.ix)>.05||Math.abs(S.iz)>.05);
+  const p=player.position,moving=(S.mode==='play'||S.mode==='forest')&&(Math.abs(S.ix)>.05||Math.abs(S.iz)>.05);
   heroSprite.position.set(p.x,p.y,p.z);
-  if(moving||S.mode!=='play')tick(heroSprite,S.dt);else setFrame(heroSprite,0,0,0);
+  if(moving||(S.mode!=='play'&&S.mode!=='forest'))tick(heroSprite,S.dt);else setFrame(heroSprite,0,0,0);
   if(Math.abs(S.ix)>.1)turn(heroSprite,S.ix>0); // на картинке герой бежит вправо
   faceCamera(heroSprite);
 }
@@ -1120,7 +1166,7 @@ function updateWin(dt){
 }
 function startWake(){ // герой становится настоящим
   $('win').hidden=$('menu').hidden=true;
-  buildWorld(R_N-1);S.mode='wake';S.winT=0;arrow.visible=false;
+  S.helper=null;buildWorld(R_N-1);S.mode='wake';S.winT=0;arrow.visible=false;
   S.bricks.forEach(o=>o.mesh.visible=false);ghost.visible=false;S.cats.forEach(c=>c.state='gone');
   friends.forEach(f=>world.remove(f));friends=[];
   ANIMALS.filter((a,n)=>n%2===0).forEach((a,n)=>{const f=addFriend(a),u=1.45+n*.84;f.position.set(Math.sin(u)*(R_PLINTH+2.2),0,Math.cos(u)*(R_PLINTH+2.2));f.u.fixed=true});
@@ -1149,7 +1195,7 @@ const TALE={
   ['hero-lego','Колдовство задело и тебя: ты тоже кирпичный! Но только ты можешь всех спасти. Собери их и оживи!']],
  end:[['tower','Бармалей заперт в высокой кирпичной башне. Оттуда ему не выбраться, и больше он никого не заколдует!'],
   ['village','В лесу снова поют птицы, а у всех зверят есть свои домики.'],
-  ['kot','Кот Бандит понял, что с друзьями веселее, и больше ничего не разбрасывает. Конец!']]
+  ['kot','Кот Бандит понял, что с друзьями веселее, и больше ничего не разбрасывает. А теперь весь лес твой: строй что хочешь!']]
 };
 let taleQueue=[],taleDone=null;
 function tale(name,done){
@@ -1165,6 +1211,109 @@ function thumb(b,cv,locked){
   const px=Math.max(b.cols,b.rows)+2;cv.width=cv.height=px;const g=cv.getContext('2d'),ox=(px-b.cols)>>1,oy=(px-b.rows)>>1,top=new Map();
   voxelsOf(b).vox.forEach(v=>{const k=v.x+','+v.y,o=top.get(k);if(!o||v.z>o.z)top.set(k,v)});
   top.forEach(v=>{g.fillStyle=locked?'#79808f':'#'+b.pal[v.c].toString(16).padStart(6,'0');g.fillRect(ox+v.x,oy+b.rows-1-v.y,1,1)});
+}
+function showPick(i){ // перед уровнем выбираем, кого взять с собой
+  S.mode='pick';$('menu').hidden=$('win').hidden=true;$('pick').hidden=false;
+  const box=$('pickGrid');box.innerHTML='';
+  ANIMALS.forEach((a,n)=>{
+    if(!save.stars[n]||n===i)return;
+    const b=document.createElement('button');b.className='card brick';
+    b.innerHTML=`<img src="art/${a.art}.webp" alt=""><b>${a.name}</b><span class="skill">${SKILLS[a.id]}</span>`;
+    b.onclick=()=>{audio();$('pick').hidden=true;S.helper=a.id;startLevel(i)};box.appendChild(b);
+  });
+  $('pickNone').onclick=()=>{audio();$('pick').hidden=true;S.helper=null;startLevel(i)};
+}
+/* ---------- Мой лес: свободная стройка ---------- */
+const U=1.5,BH=.64,MAX_THINGS=600;
+const COLORS=[['Красный',0xd7263d],['Синий',0x1f6fd1],['Жёлтый',0xffc928],['Зелёный',0x2fa84f],['Белый',0xf4f4f4],['Коричневый',0x8a5a2e],['Розовый',0xff7fa8]];
+const TOOLS=[
+ ...COLORS.map(([name,c],n)=>({id:'b'+n,kind:'block',name,c})),
+ {id:'bgold',kind:'block',name:'Золотой',c:0xe8b923,need:45},
+ {id:'round',kind:'decor',name:'Дерево'},{id:'flower',kind:'decor',name:'Цветок'},{id:'hedge',kind:'decor',name:'Куст'},
+ {id:'mushroom',kind:'decor',name:'Гриб',need:20},{id:'lantern',kind:'decor',name:'Фонарь',need:25},
+ {id:'palm',kind:'decor',name:'Пальма',need:30},{id:'fir',kind:'decor',name:'Ёлка',need:35},
+ ...HOUSES.filter(h=>!h.boss).map(h=>({id:'h'+h.id,kind:'house',name:h.name.replace('Домик ',''),lvl:LEVELS.indexOf(h)})),
+ ...ANIMALS.map(a=>({id:'a'+a.id,kind:'animal',name:a.name,a})),
+ {id:'erase',kind:'erase',name:'Убрать'}
+];
+const toolGeo={};let things=[],occ=new Map(),tool=TOOLS[0];
+const raycaster=new THREE.Raycaster();
+const starsTotal=()=>save.stars.reduce((a,b)=>a+(b||0),0);
+function geoOf(t){
+  if(toolGeo[t.id])return toolGeo[t.id];
+  let g;
+  if(t.kind==='block')g=bake(brickItems(2,2,U/2,t.c));
+  else if(t.kind==='decor'){const it=[];g={};g.r=DECOR[t.id](0,0,it,THEMES.garden,rng(5));g.geo=bake(it);return toolGeo[t.id]=g}
+  else{const b=LEVELS[t.lvl],it=[];b.bricks.forEach(br=>{const q=localPos(b,br);it.push(...brickItems(br.lx,br.lz,b.unit,b.pal[br.c],q.x,q.y,q.z))});g=bake(it)}
+  return toolGeo[t.id]=g;
+}
+function addThing(rec){
+  const t=TOOLS.find(x=>x.id===rec.t);if(!t)return null;
+  const wx=rec.x*U,wz=rec.z*U,wy=(rec.y||0)*BH;
+  let mesh,thing={rec,t};
+  if(t.kind==='animal'){
+    mesh=makeSprite(t.a.art,t.a.tall*.56);mesh.position.set(wx,0,wz);mesh.u={tx:wx,tz:wz,rest:1,ph:Math.random()*6,fly:t.a.bird};
+    world.add(mesh);friends.push(mesh);thing.pick=mesh.plane;
+  }else{
+    const g=geoOf(t);mesh=new THREE.Mesh(t.kind==='decor'?g.geo:g,t.kind==='decor'?MAT_MATTE:MAT);
+    mesh.castShadow=mesh.receiveShadow=true;mesh.position.set(wx,wy+(t.kind==='block'?BH/2:0),wz);world.add(mesh);mesh.updateMatrixWorld(true);thing.pick=mesh;
+    const r=t.kind==='block'?(rec.y?0:1):t.kind==='house'?5.6:g.r;
+    if(r){thing.ob={x:wx,z:wz,r};obstacles.push(thing.ob)}
+    occ.set(rec.x+','+(rec.y||0)+','+rec.z,thing);
+  }
+  thing.mesh=mesh;mesh.userData.thing=thing;thing.pick.userData.thing=thing;things.push(thing);return thing;
+}
+function removeThing(th){
+  world.remove(th.mesh);things=things.filter(x=>x!==th);
+  if(th.ob)obstacles=obstacles.filter(o=>o!==th.ob);
+  friends=friends.filter(f=>f!==th.mesh);
+  occ.delete(th.rec.x+','+(th.rec.y||0)+','+th.rec.z);
+  save.forest=save.forest.filter(r=>r!==th.rec);persist();
+}
+function forestTap(sx,sy){
+  const rc=canvas.getBoundingClientRect();
+  camera.updateMatrixWorld();
+  raycaster.setFromCamera({x:(sx-rc.left)/rc.width*2-1,y:-(sy-rc.top)/rc.height*2+1},camera);
+  const hits=raycaster.intersectObjects(things.map(t=>t.pick),false),h=hits[0];
+  if(tool.kind==='erase'){
+    if(h){const q=h.point;burst(q.x,q.y,q.z,[0xffffff,0xffc928],8,4);tone(420,.08,'triangle',.1,260);removeThing(h.object.userData.thing)}
+    return;
+  }
+  if(save.forest.length>=MAX_THINGS){toast('Лес уже полон. Убери что-нибудь!',true);return}
+  let x,y=0,z;
+  const th=h&&h.object.userData.thing;
+  if(th&&th.t.kind==='block'){ // ставим рядом с той гранью кирпича, куда нажали
+    const n=h.face.normal,by=th.rec.y||0;x=th.rec.x;z=th.rec.z;y=by;
+    if(h.point.y>=(by+1)*BH-.04)y=by+1; // верх кирпича и его шипы: ставим сверху
+    else if(n.y<-.5){if(!by)return;y=by-1}
+    else if(Math.abs(n.x)>Math.abs(n.z))x+=Math.sign(n.x);
+    else z+=Math.sign(n.z);
+  }else{
+    const o=raycaster.ray.origin,d=raycaster.ray.direction;if(d.y>=0)return;
+    const k=-o.y/d.y,px=o.x+d.x*k,pz=o.z+d.z*k;if(!(Math.hypot(px,pz)<=R_WORLD))return;
+    x=Math.round(px/U);z=Math.round(pz/U);
+  }
+  if(tool.kind==='animal')y=0;
+  if(y>30||occ.has(x+','+y+','+z))return;
+  const rec={t:tool.id,x,y,z};save.forest.push(rec);addThing(rec);persist();
+  sfx.snap();burst(x*U,y*BH+.5,z*U,[tool.c||0xffe27a,0xffffff],5,3);
+}
+function renderBar(){
+  const box=$('forestBar'),got=starsTotal();box.innerHTML='';
+  TOOLS.forEach(t=>{
+    const locked=(t.need&&got<t.need)||(t.kind==='animal'&&!save.stars[ANIMALS.indexOf(t.a)]);
+    const b=document.createElement('button');b.className='tool2'+(t===tool?' on':'');b.disabled=!!locked;
+    b.innerHTML=(t.kind==='block'?`<i style="background:#${t.c.toString(16).padStart(6,'0')}"></i>`:t.kind==='animal'?`<img src="art/${t.a.art}.webp" alt="">`:'')+`<span>${locked&&t.need?'★ '+t.need:t.name}</span>`;
+    b.onclick=()=>{audio();tool=t;renderBar()};box.appendChild(b);
+  });
+}
+function openForest(){
+  $('menu').hidden=$('win').hidden=$('story').hidden=true;S.helper=null;S.mode='forest';
+  buildWorld('forest');things=[];occ=new Map();player.visible=true;setHero(save.hero);heroSprite.scale.setScalar(1);player.position.set(0,0,8);
+  save.forest=save.forest.filter(r=>Number.isFinite(r.x)&&Number.isFinite(r.z));save.forest.forEach(addThing);
+  $('hud').hidden=false;$('status').hidden=true;$('hands').hidden=true;$('keys').hidden=true;$('forestBar').hidden=false;
+  joyRest();renderBar();
+  toast(touchDevice?'Выбери внизу, что строить, и нажимай на землю!':'Выбери внизу, что строить, и нажимай на землю. Всё сохранится.',false,4);
 }
 function isOpen(i){return i===0||!!save.stars[i-1]}
 function renderCards(){
@@ -1183,16 +1332,17 @@ function renderCards(){
 function openLevel(i){
   if(i===0&&!save.intro){save.intro=true;persist();tale('intro',()=>startLevel(0));return}
   if(i>=R_N&&!save.hero){startWake();return}
-  startLevel(i);
+  if(ANIMALS.some((a,n)=>save.stars[n]&&n!==i))showPick(i);else{S.helper=null;startLevel(i)}
 }
 function showMenu(){
-  S.mode='menu';joyRest();$('toast').className='';
+  S.mode='menu';S.helper=null;joyRest();$('toast').className='';$('forestBar').hidden=true;$('pick').hidden=true;
   const next=LEVELS.findIndex((b,i)=>!save.stars[i]);
   buildWorld(next<0?LEVELS.length-1:next);setHero(false);player.visible=false;arrow.visible=false;
   $('hud').hidden=$('hands').hidden=$('keys').hidden=true;$('win').hidden=true;$('story').hidden=true;$('menu').hidden=false;renderCards();
+  const open=!!save.stars[TOWER],fb=$('forestBtn');fb.disabled=!open;fb.textContent=open?'Мой лес':'Мой лес откроется после башни';
 }
 function startLevel(i){
-  S.mode='play';buildWorld(i);player.visible=true;setHero(save.hero);heroSprite.scale.setScalar(1);player.position.y=0;
+  S.mode='play';S.magicT=0;$('status').hidden=false;$('forestBar').hidden=true;buildWorld(i);player.visible=true;setHero(save.hero);heroSprite.scale.setScalar(1);player.position.y=0;
   $('menu').hidden=$('win').hidden=true;$('hud').hidden=$('hands').hidden=false;$('keys').hidden=touchDevice;
   joyRest();drawHud();drawHands();
   const b=S.bird;
@@ -1203,11 +1353,12 @@ function startLevel(i){
 $('menuBtn').onclick=showMenu;
 $('winMenuBtn').onclick=showMenu;
 $('taleBtn').onclick=()=>{audio();tale('intro',showMenu)};
+$('forestBtn').onclick=()=>{audio();openForest()};
 $('nextBtn').onclick=()=>{
-  if(S.mode==='wakeDone')startLevel(R_N);
+  if(S.mode==='wakeDone')openLevel(R_N);
   else if(S.lvl===R_N-1&&!save.hero)startWake();
-  else if(S.lvl===TOWER)tale('end',showMenu);
-  else startLevel(S.lvl+1);
+  else if(S.lvl===TOWER)tale('end',openForest);
+  else openLevel(S.lvl+1);
 };
 function drawSound(){$('soundBtn').textContent=soundOn?'🔊':'🔇'}
 $('soundBtn').onclick=()=>{audio();soundOn=!soundOn;drawSound();try{localStorage.setItem('kirpich-sound',soundOn?'on':'off')}catch(e){}};
@@ -1232,13 +1383,20 @@ function frame(now){
 }
 function step(dt){
   S.time+=dt;S.dt=dt;
-  if(S.mode==='play'){updatePlayer(dt);S.cats.forEach(c=>updateCat(c,dt))}
+  if(S.mode==='play'){
+    updatePlayer(dt);S.cats.forEach(c=>updateCat(c,dt));
+    if(S.helper==='edinorog'&&(S.magicT=(S.magicT||0)+dt)>16){
+      S.magicT=0;const o=S.bricks.find(b=>b.state==='ground');
+      if(o){o.back=0;toSlot(o);toast('Единорог наколдовал детальку!')}
+    }
+  }
+  if(S.mode==='forest')updatePlayer(dt);
   if(S.mode==='win')updateWin(dt);
   if(S.mode==='wake'||S.mode==='wakeDone')updateWake(dt);
   updateBricks(dt);updateArrow();updateCamera(dt);updateFriends(dt);updateHero();updateParticles(dt);
   renderer.render(scene,camera);
 }
-window.__kp={S,LEVELS,R_N,TOWER,obstacles:()=>obstacles,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,friends:()=>friends};
+window.__kp={S,LEVELS,R_N,TOWER,obstacles:()=>obstacles,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,openForest,forestTap,openLevel,TOOLS,setTool:t=>{tool=t;renderBar()},things:()=>things,camera,friends:()=>friends};
 showMenu();
 requestAnimationFrame(frame);
 </script>
