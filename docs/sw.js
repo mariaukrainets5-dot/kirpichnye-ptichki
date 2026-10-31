@@ -1,5 +1,5 @@
 /* Keeps the game playable offline: always tries the network first, so updates still arrive. */
-const CACHE = 'kirpichnye-ptichki-2';
+const CACHE = 'kirpichnye-zverata-1';
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'three.min.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'])).then(() => self.skipWaiting()));
