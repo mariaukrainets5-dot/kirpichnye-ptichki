@@ -32,31 +32,48 @@ def cutout(name, size=640):
     img.save(out / f"{name}.webp", quality=86, method=6)
 
 
-GRID, CELL = 6, 256
+GRID, CELL, PAD = 8, 224, 6  # PAD: пустая кромка вокруг кадра, чтобы кадры не просвечивали друг в друга
 FF = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
+FPS = 24
+
+
+def best_loop(frames):
+    """Finds the longest stretch whose last frame looks like its first one, so the clip loops without a jump."""
+    small = np.stack([np.asarray(Image.fromarray(f).resize((48, 48))) for f in frames[::2]]).astype(float)
+    n = len(small)
+    least, most = int(2.6 * FPS / 2), n - 1
+    best, pair = 1e18, (0, n - 1)
+    for a in range(0, n - least):
+        for b in range(a + least, min(a + most, n - 1) + 1):
+            score = ((small[a] - small[b]) ** 2).mean() - (b - a) * .06
+            if score < best:
+                best, pair = score, (a, b)
+    return pair[0] * 2, pair[1] * 2
 
 
 def sheet(name):
-    """Turns a clip into a 6x6 sheet of cut-out frames for the game."""
+    """Turns a clip into a sheet of cut-out frames for the game."""
     clip = src / "video" / f"{name}.mp4"
     info = subprocess.run([FF[:-6] + "ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(clip)], capture_output=True, text=True).stdout.strip().split(",")
-    w, h = int(info[0]), int(info[1])
-    raw = subprocess.run([FF, "-v", "error", "-i", str(clip), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+    w, h = int(info[0]) // 2 * 2 // 2, int(info[1]) // 2
+    raw = subprocess.run([FF, "-v", "error", "-i", str(clip), "-vf", f"scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
     frames = np.frombuffer(raw, "uint8").reshape(-1, h, w, 3)
-    picks = np.linspace(0, len(frames) - 1, GRID * GRID).astype(int)
+    a, b = best_loop(frames)
+    picks = np.linspace(a, b, GRID * GRID, endpoint=False).astype(int)
     keyed = [key(frames[i]) for i in picks]
     box = None
-    for _, a in keyed:
-        b = a.point(lambda v: 255 if v > 60 else 0).getbbox()
-        if b:
-            box = b if box is None else (min(box[0], b[0]), min(box[1], b[1]), max(box[2], b[2]), max(box[3], b[3]))
-    scale = CELL / max(box[2] - box[0], box[3] - box[1])
+    for _, al in keyed:
+        c = al.point(lambda v: 255 if v > 60 else 0).getbbox()
+        if c:
+            box = c if box is None else (min(box[0], c[0]), min(box[1], c[1]), max(box[2], c[2]), max(box[3], c[3]))
+    scale = (CELL - PAD * 2) / max(box[2] - box[0], box[3] - box[1])
     cw, ch = round((box[2] - box[0]) * scale), round((box[3] - box[1]) * scale)
-    canvas = Image.new("RGBA", (cw * GRID, ch * GRID), (0, 0, 0, 0))
+    fw, fh = cw + PAD * 2, ch + PAD * 2
+    canvas = Image.new("RGBA", (fw * GRID, fh * GRID), (0, 0, 0, 0))
     for i, (img, _) in enumerate(keyed):
-        canvas.paste(img.crop(box).resize((cw, ch), Image.LANCZOS), ((i % GRID) * cw, (i // GRID) * ch))
-    canvas.save(out / f"s-{name}.webp", quality=76, alpha_quality=88, method=6)
-    print(name, (cw, ch), (out / f"s-{name}.webp").stat().st_size // 1024, "KB")
+        canvas.paste(img.crop(box).resize((cw, ch), Image.LANCZOS), ((i % GRID) * fw + PAD, (i // GRID) * fh + PAD))
+    canvas.save(out / f"s-{name}.webp", quality=72, alpha_quality=85, method=4)
+    print(name, f"loop {a/FPS:.1f}-{b/FPS:.1f}s", (fw, fh), (out / f"s-{name}.webp").stat().st_size // 1024, "KB")
 
 
 CHARACTERS = ("zayka", "medved", "slon", "zhiraf", "lisa", "snegir", "flamingo", "pavlin", "zhar", "edinorog", "drakon", "hero", "barmaley-full")

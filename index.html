@@ -579,47 +579,60 @@ function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;
 const SHEETS=['zayka','medved','slon','zhiraf','lisa','snegir','flamingo','pavlin','zhar','edinorog','drakon','hero','barmaley-full'];
 const ART=[...SHEETS,'bird','flock','barmaley','kot','hero-lego','village','tower'];
 ART.forEach(n=>{new Image().src=`art/${n}.webp`}); // заранее, чтобы работало и без интернета
-const GRID=6,FRAMES=GRID*GRID,FPS=11;
+const GRID=8,FRAMES=GRID*GRID,FOOT=.027; // FOOT: пустая кромка под ногами на листе
 const loader=new THREE.TextureLoader(),artMat={},artAspect={},artWait={};
 const shadowGeo=new THREE.CircleGeometry(.5,20);shadowGeo.rotateX(-Math.PI/2);
 const shadowMat=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.22,depthWrite:false});
-function matOf(name){
+const FOG={fogColor:{value:new THREE.Color()},fogNear:{value:48},fogFar:{value:92}};
+const SPRITE_VS=`attribute vec2 uvB;attribute float blend;varying vec2 vA;varying vec2 vB;varying float vK;varying float vD;
+void main(){vA=uv;vB=uvB;vK=blend;vec4 mv=modelViewMatrix*vec4(position,1.);vD=-mv.z;gl_Position=projectionMatrix*mv;}`;
+const SPRITE_FS=`uniform sampler2D map;uniform vec3 fogColor;uniform float fogNear;uniform float fogFar;varying vec2 vA;varying vec2 vB;varying float vK;varying float vD;
+void main(){vec4 a=texture2D(map,vA),b=texture2D(map,vB);float k=clamp((vK-.45)/.55,0.,1.),al=mix(a.a,b.a,k);if(al<.22)discard;
+vec3 c=mix(a.rgb*a.a,b.rgb*b.a,k)/al;c=mix(c,fogColor,smoothstep(fogNear,fogFar,vD));gl_FragColor=vec4(c,smoothstep(.22,.55,al));}`;
+function matOf(name){ // соседние кадры смешиваются, поэтому движение идёт плавно, без рывков
   if(!artMat[name]){
     artWait[name]=[];
-    artMat[name]=new THREE.MeshBasicMaterial({transparent:true,alphaTest:.3,side:THREE.DoubleSide,map:loader.load(`art/s-${name}.webp`,t=>{
-      artAspect[name]=t.image.width/t.image.height;artWait[name].forEach(fit);artWait[name]=[];
-    })});
+    const tex=loader.load(`art/s-${name}.webp?v=2`,t=>{artAspect[name]=t.image.width/t.image.height;artWait[name].forEach(fit);artWait[name]=[]});
+    tex.anisotropy=4;
+    artMat[name]=new THREE.ShaderMaterial({uniforms:{map:{value:tex},...FOG},vertexShader:SPRITE_VS,fragmentShader:SPRITE_FS,transparent:true,side:THREE.DoubleSide});
   }
   return artMat[name];
 }
 function fit(g){ // картинка подгрузилась: выставляем размер по пропорциям кадра
   const a=artAspect[g.art];g.w=g.h*a;g.plane.scale.set((g.left?1:-1)*g.w,g.h,1);g.shadow.scale.set(Math.max(g.w,g.h*.4)*.72,1,g.h*.24);
+  g.r=Math.max(1,g.w*.42); // радиус тела для столкновений
 }
 function makeSprite(name,height){ // живой герой: кадры из ролика на листе
-  const geo=new THREE.PlaneGeometry(1,1);geo.translate(0,.5,0);
+  const geo=new THREE.PlaneGeometry(1,1);geo.translate(0,.5-FOOT,0);
+  geo.setAttribute('uvB',new THREE.Float32BufferAttribute(new Float32Array(8),2));geo.setAttribute('blend',new THREE.Float32BufferAttribute(new Float32Array(4),1));
   const g=new THREE.Group(),plane=new THREE.Mesh(geo,matOf(name)),sh=new THREE.Mesh(shadowGeo,shadowMat);
-  sh.position.y=.04;g.add(sh,plane);Object.assign(g,{plane,shadow:sh,art:name,h:height,w:height,left:true,ft:Math.random()*FRAMES,loop:false});
+  plane.frustumCulled=false;sh.position.y=.04;g.add(sh,plane);Object.assign(g,{plane,shadow:sh,art:name,h:height,w:height,r:1.2,left:true,ft:Math.random()*FRAMES});
   if(artAspect[name])fit(g);else{plane.scale.set(height,height,1);artWait[name].push(g)}
-  setFrame(g,0);return g;
+  setFrame(g,0,0,0);return g;
 }
-function setFrame(g,i){
-  const c=i%GRID,r=(i/GRID)|0,u0=c/GRID,u1=(c+1)/GRID,v1=1-r/GRID,v0=1-(r+1)/GRID,uv=g.plane.geometry.attributes.uv;
-  uv.setXY(0,u0,v1);uv.setXY(1,u1,v1);uv.setXY(2,u0,v0);uv.setXY(3,u1,v0);uv.needsUpdate=true;
+function cellUV(attr,i){
+  const c=i%GRID,r=(i/GRID)|0,u0=c/GRID,u1=(c+1)/GRID,v1=1-r/GRID,v0=1-(r+1)/GRID;
+  attr.setXY(0,u0,v1);attr.setXY(1,u1,v1);attr.setXY(2,u0,v0);attr.setXY(3,u1,v0);attr.needsUpdate=true;
 }
-function tick(g,dt){ // туда-обратно, чтобы цикл шёл без рывка; бег героя идёт по кругу
-  g.ft+=dt*FPS;const f=g.ft|0,span=FRAMES*2-2,k=f%span;
-  setFrame(g,g.loop?f%FRAMES:(k<FRAMES?k:span-k));
+function setFrame(g,a,b,k){
+  const ge=g.plane.geometry;cellUV(ge.attributes.uv,a);cellUV(ge.attributes.uvB,b);
+  const bl=ge.attributes.blend;for(let i=0;i<4;i++)bl.setX(i,k);bl.needsUpdate=true;
 }
+const LOOP={zayka:3.8,medved:2.9,slon:4.9,zhiraf:4.4,lisa:4.8,snegir:2.6,flamingo:4.3,pavlin:4.9,zhar:4.7,edinorog:4.3,drakon:4.6,hero:2.7,'barmaley-full':4.8}; // длина цикла ролика, секунды
+function tick(g,dt){g.ft+=dt*FRAMES/LOOP[g.art];const f=g.ft|0;setFrame(g,f%FRAMES,(f+1)%FRAMES,g.ft-f)}
 function turn(g,left){if(g.left===left)return;g.left=left;g.plane.scale.x=(left?1:-1)*g.w}
 function faceCamera(g){
   const p=g.getWorldPosition(_v);g.plane.rotation.y=Math.atan2(camera.position.x-p.x,camera.position.z-p.z);
 }
 const _v=new THREE.Vector3();
-const heroSprite=makeSprite('hero',3.5);heroSprite.visible=false;heroSprite.loop=true;scene.add(heroSprite);
+function pushOut(p,r){ // никто не проходит сквозь подставку, деревья и камни
+  obstacles.forEach(o=>{const dx=p.x-o.x,dz=p.z-o.z,d=Math.hypot(dx,dz),m=o.r+r;if(d<m&&d>0){p.x=o.x+dx/d*m;p.z=o.z+dz/d*m}});
+}
+const heroSprite=makeSprite('hero',3.5);heroSprite.visible=false;scene.add(heroSprite);
 
 /* ---------- Детали мира ---------- */
 const rng=seed=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
-const R_WORLD=27,R_PLINTH=5.4;
+const R_WORLD=27,R_PLINTH=6.2;
 const DECOR={
  fir:(x,z,it,t)=>{it.push(box(.7,1.4,.7,x,.7,z,0x6b4a2e));const g=t.stars?0x2c6a73:0x2f7a54;
    [[2.8,1.7],[2.1,2.9],[1.4,4],[.8,4.9]].forEach(([s,y],i)=>{it.push(box(s,1.2,s,x,y,z,g));if(!t.stars&&t===THEMES.snow)it.push(box(s*.8,.22,s*.8,x,y+.68,z,0xffffff))});return 1.6},
@@ -683,7 +696,7 @@ function buildWorld(i){
   clearWorld();
   const b=LEVELS[i],t=THEMES[b.theme],rand=rng(4242+i*17);
   S.lvl=i;S.bird=b;S.hits=0;S.shoos=0;
-  scene.background=new THREE.Color(t.sky);scene.fog=new THREE.Fog(t.sky,48,92);
+  scene.background=new THREE.Color(t.sky);scene.fog=new THREE.Fog(t.sky,48,92);FOG.fogColor.value.set(t.sky);
   hemi.intensity=t.hemi;sun.intensity=t.sun;
   $('hud').style.color='';
 
@@ -709,7 +722,7 @@ function buildWorld(i){
   const ug=new THREE.Mesh(bake(under),MAT_MATTE);ug.userData.temp=true;world.add(ug);
 
   // Подставка
-  const pl=[box(R_PLINTH*2-.8,.5,R_PLINTH*2-.8,0,.25,0,t.plinth),box(R_PLINTH*2-2,.3,R_PLINTH*2-2,0,.65,0,0xffffff)];
+  const pl=[{geo:new THREE.CylinderGeometry(R_PLINTH-.25,R_PLINTH,.5,48),m:at(0,.25,0),c:t.plinth},{geo:new THREE.CylinderGeometry(R_PLINTH-1,R_PLINTH-.8,.3,48),m:at(0,.65,0),c:0xffffff}];
   const pm=new THREE.Mesh(bake(pl),MAT);pm.receiveShadow=true;pm.castShadow=true;pm.userData.temp=true;world.add(pm);
   S.baseY=.8;
   obstacles.push({x:0,z:0,r:R_PLINTH});
@@ -880,7 +893,7 @@ function scatter(cat){
 }
 function updateCat(c,dt){
   c.t+=dt;const m=c.mesh,p=m.position;
-  const go=(tx,tz,sp)=>{const dx=tx-p.x,dz=tz-p.z,l=Math.hypot(dx,dz)||1;p.x+=dx/l*sp*dt;p.z+=dz/l*sp*dt;
+  const go=(tx,tz,sp)=>{const dx=tx-p.x,dz=tz-p.z,l=Math.hypot(dx,dz)||1;p.x+=dx/l*sp*dt;p.z+=dz/l*sp*dt;pushOut(p,c.boss?1.3:.9);
     if(c.boss){turn(m,dx*Math.cos(S.yaw)-dz*Math.sin(S.yaw)<0);return l}
     m.rotation.y=Math.atan2(dz,-dx);const sw=Math.sin(S.time*15)*.7;m.legs.forEach((g,i)=>g.rotation.z=i%3?sw:-sw);return l};
   if(c.boss){tick(m,dt);faceCamera(m)}else m.tail.rotation.z=Math.sin(S.time*7)*.35;
@@ -894,16 +907,16 @@ function updateCat(c,dt){
   }else if(c.state==='peek'){
     p.y=Math.abs(Math.sin(c.t*9))*.35;if(c.t>1.4){p.y=0;c.state='run'}
   }else if(c.state==='run'){
-    if(go(0,0,4.4)<R_PLINTH+.6){c.state='swipe';c.t=0}
+    if(go(0,0,4.4)<R_PLINTH+1.7){c.state='swipe';c.t=0}
   }else if(c.state==='swipe'){
     p.y=Math.sin(Math.min(c.t/.5,1)*Math.PI)*1.6;
-    if(c.t>.5){p.y=0;scatter(c);c.state='flee'}
+    if(c.t>.5){p.y=0;scatter(c);c.state='flee';c.t=0}
   }else if(c.state==='flee'){
     const tx=Math.cos(c.den)*(R_WORLD+6),tz=Math.sin(c.den)*(R_WORLD+6);
-    if(go(tx,tz,10)<1){m.visible=false;c.state='wait';c.timer=S.bird.catEvery*(.85+Math.random()*.3)}
+    if(go(tx,tz,10)<1||c.t>7){m.visible=false;c.state='wait';c.timer=S.bird.catEvery*(.85+Math.random()*.3)}
   }
   if((c.state==='run'||c.state==='peek')&&Math.hypot(p.x-player.position.x,p.z-player.position.z)<2.1){
-    p.y=0;c.state='flee';c.den=Math.atan2(p.z,p.x);S.shoos++;sfx.shoo();toast(c.boss?'Бармалей убежал! Строй скорее!':'Кыш! Кот Бандит убежал!');
+    p.y=0;c.state='flee';c.t=0;c.den=Math.atan2(p.z,p.x);S.shoos++;sfx.shoo();toast(c.boss?'Бармалей убежал! Строй скорее!':'Кыш! Кот Бандит убежал!');
     burst(p.x,1.2,p.z,[0xf08a24,0xffffff,0xffc928],14,5);
   }
 }
@@ -920,7 +933,7 @@ function updatePlayer(dt){
     let want=Math.atan2(-dx,-dz),d=want-player.rotation.y;d=Math.atan2(Math.sin(d),Math.cos(d));player.rotation.y+=d*Math.min(1,dt*13);
     const w=Math.sin(S.time*13)*.85;player.legL.rotation.x=w;player.legR.rotation.x=-w;player.armL.rotation.x=-w;player.armR.rotation.x=w;
   }else{['legL','legR','armL','armR'].forEach(k=>player[k].rotation.x*=.75)}
-  obstacles.forEach(o=>{const dx=p.x-o.x,dz=p.z-o.z,d=Math.hypot(dx,dz);if(d<o.r+.5&&d>0){p.x=o.x+dx/d*(o.r+.5);p.z=o.z+dz/d*(o.r+.5)}});
+  pushOut(p,save.hero?1:.55);
   const r=Math.hypot(p.x,p.z);if(r>R_WORLD){p.x*=R_WORLD/r;p.z*=R_WORLD/r}
 }
 function updateBricks(dt){
@@ -977,19 +990,29 @@ function updateCamera(dt){
   camera.lookAt(camFocus.x,1.6,camFocus.z);
 }
 function updateFriends(dt){
-  const cx=Math.cos(S.yaw),sx=-Math.sin(S.yaw);
-  friends.forEach(f=>{
-    const u=f.u,dx=u.tx-f.position.x,dz=u.tz-f.position.z,d=Math.hypot(dx,dz);
-    f.visible=S.mode==='play'||S.mode==='menu'||f.position.distanceTo(camera.position)>15; // не загораживают главный момент
+  const cx=Math.cos(S.yaw),sx=-Math.sin(S.yaw),pl=player.position;
+  friends.forEach((f,n)=>{
+    const u=f.u,dx=u.tx-f.position.x,dz=u.tz-f.position.z,d=Math.hypot(dx,dz),p=f.position;
+    f.visible=S.mode==='play'||S.mode==='menu'||p.distanceTo(camera.position)>15; // не загораживают главный момент
     tick(f,dt);
     if(u.fixed){faceCamera(f);return}
-    if(d<.3){
+    if(d<.4){
       u.rest-=dt;
-      if(u.rest<=0){const s=freeSpot(Math.random);u.tx=s.x;u.tz=s.z;u.rest=1+Math.random()*4}
+      if(u.rest<=0){const s=freeSpot(Math.random);u.tx=s.x;u.tz=s.z;u.rest=1+Math.random()*4;u.walk=0}
     }else{
-      f.position.x+=dx/d*2.6*dt;f.position.z+=dz/d*2.6*dt;
+      p.x+=dx/d*2.6*dt;p.z+=dz/d*2.6*dt;u.walk=(u.walk||0)+dt;
+      if(u.walk>7){u.tx=p.x;u.tz=p.z} // застрял: выберет другую цель
       turn(f,dx*cx+dz*sx<0);
     }
+    pushOut(p,f.r);
+    friends.forEach((o,m)=>{ // обходят друг друга и героя
+      if(m<=n)return;const ax=p.x-o.position.x,az=p.z-o.position.z,l=Math.hypot(ax,az)||.01,k=f.r+o.r-l;
+      if(k>0){p.x+=ax/l*k*.5;p.z+=az/l*k*.5;o.position.x-=ax/l*k*.5;o.position.z-=az/l*k*.5}
+    });
+    const ax=p.x-pl.x,az=p.z-pl.z,l=Math.hypot(ax,az)||.01,k=f.r+1-l;if(k>0){p.x+=ax/l*k;p.z+=az/l*k}
+    S.bricks.forEach(o=>{if(o.state!=='ground')return;const bx=p.x-o.x,bz=p.z-o.z,e=Math.hypot(bx,bz)||.01,q=f.r+1-e;if(q>0){p.x+=bx/e*q;p.z+=bz/e*q}});
+    pushOut(p,f.r);
+    const rr=Math.hypot(p.x,p.z);if(rr>R_WORLD-1){p.x*=(R_WORLD-1)/rr;p.z*=(R_WORLD-1)/rr}
     if(u.fly)f.plane.position.y=2.6+Math.sin(S.time*2+u.ph)*.5; // птицы порхают над землёй
     faceCamera(f);
   });
@@ -1001,12 +1024,13 @@ function updateHero(){
   if(!heroSprite.visible)return;
   const p=player.position,moving=S.mode==='play'&&(Math.abs(S.ix)>.05||Math.abs(S.iz)>.05);
   heroSprite.position.set(p.x,p.y,p.z);
-  if(moving)tick(heroSprite,S.dt);else if(S.mode==='play')setFrame(heroSprite,0);else tick(heroSprite,S.dt);
+  if(moving||S.mode!=='play')tick(heroSprite,S.dt);else setFrame(heroSprite,0,0,0);
   if(Math.abs(S.ix)>.1)turn(heroSprite,S.ix>0); // на картинке герой бежит вправо
   faceCamera(heroSprite);
 }
 function startWin(){
   S.mode='win';S.winT=0;arrow.visible=false;$('toast').className='';joyRest();
+  player.visible=false;heroSprite.visible=false; // главный момент принадлежит спасённому
   S.cats.forEach(c=>{c.mesh.visible=false;c.state='gone'});
   sfx.win();
   const stars=S.hits===0?3:S.hits<=2?2:1;
@@ -1094,7 +1118,7 @@ function startWake(){ // герой становится настоящим
   S.bricks.forEach(o=>o.mesh.visible=false);ghost.visible=false;S.cats.forEach(c=>c.state='gone');
   friends.forEach(f=>world.remove(f));friends=[];
   ANIMALS.filter((a,n)=>n%2===0).forEach((a,n)=>{const f=addFriend(a),u=1.45+n*.84;f.position.set(Math.sin(u)*(R_PLINTH+2.2),0,Math.cos(u)*(R_PLINTH+2.2));f.u.fixed=true});
-  player.position.set(0,S.baseY,0);player.rotation.y=0;setHero(false);S.camD=19;S.camH=13.5;camFocus.set(0,3,0);
+  player.position.set(0,S.baseY,0);player.rotation.y=0;player.visible=true;setHero(false);S.camD=19;S.camH=13.5;camFocus.set(0,3,0);
   toast('Жители леса говорят волшебные слова…',false,3);
 }
 function updateWake(dt){
@@ -1208,7 +1232,7 @@ function step(dt){
   updateBricks(dt);updateArrow();updateCamera(dt);updateFriends(dt);updateHero();updateParticles(dt);
   renderer.render(scene,camera);
 }
-window.__kp={S,LEVELS,R_N,TOWER,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,friends:()=>friends};
+window.__kp={S,LEVELS,R_N,TOWER,obstacles:()=>obstacles,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,friends:()=>friends};
 showMenu();
 requestAnimationFrame(frame);
 </script>
