@@ -997,7 +997,7 @@ function updateCamera(dt){
     camera.position.set(Math.sin(a)*d,23,Math.cos(a)*d);camera.lookAt(0,b.rows*b.unit*.3,0);return;
   }
   if(S.mode==='win'){
-    const near=Math.min(S.winT/1.2,1)*(1-soft(WIN.fly,WIN.fly+2,S.winT)),a=S.yaw*(1-near)+Math.sin(S.winT*.4)*.22,d=S.camD*lerp(1,.68,near);
+    const near=Math.min(S.winT/1.2,1)*(1-soft(WIN.fly,WIN.fly+2,S.winT)),a=S.yaw*(1-near)+Math.sin(S.winT*.4)*.22,d=S.camD*lerp(1,camera.aspect<1?1.05:.68,near);
     const h=S.bird.rows*S.bird.unit*.42+S.baseY;
     camFocus.lerp(_p.set(winBird?winBird.position.x*.5:0,winBird?Math.max(h,Math.min(winBird.position.y*.8,13)):h,winBird?winBird.position.z*.5:0),Math.min(1,dt*2.2));
     camera.position.set(camFocus.x+Math.sin(a)*d,camFocus.y+S.camH*lerp(.55,.2,near),camFocus.z+Math.cos(a)*d);camera.lookAt(camFocus);return;
