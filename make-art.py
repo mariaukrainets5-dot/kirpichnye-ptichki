@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageChops, ImageFilter
 
 root = Path(__file__).parent
 src, out = root / "art-src", root / "art"
@@ -37,6 +37,35 @@ FF = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
 FPS = 24
 
 
+def main_only(img, a):
+    """Keeps only the character itself: stray smoke and sparks around it are dropped."""
+    small = np.asarray(a.resize((96, 96)).point(lambda v: 255 if v > 40 else 0).filter(ImageFilter.MaxFilter(3))) > 0
+    seen = np.zeros(small.shape, bool)
+    best = []
+    for y, x in zip(*np.nonzero(small)):
+        if seen[y, x]:
+            continue
+        stack, part = [(y, x)], []
+        seen[y, x] = True
+        while stack:
+            cy, cx = stack.pop()
+            part.append((cy, cx))
+            for ny, nx in ((cy + 1, cx), (cy - 1, cx), (cy, cx + 1), (cy, cx - 1)):
+                if 0 <= ny < 96 and 0 <= nx < 96 and small[ny, nx] and not seen[ny, nx]:
+                    seen[ny, nx] = True
+                    stack.append((ny, nx))
+        if len(part) > len(best):
+            best = part
+    mask = np.zeros(small.shape, "uint8")
+    for y, x in best:
+        mask[y, x] = 255
+    grown = Image.fromarray(mask).resize(a.size, Image.NEAREST).filter(ImageFilter.MaxFilter(9))
+    clean = ImageChops.multiply(a, grown)
+    img = img.copy()
+    img.putalpha(clean)
+    return img, clean
+
+
 def best_loop(frames):
     """Finds the longest stretch whose last frame looks like its first one, so the clip loops without a jump."""
     small = np.stack([np.asarray(Image.fromarray(f).resize((48, 48))) for f in frames[::2]]).astype(float)
@@ -60,7 +89,7 @@ def sheet(name):
     frames = np.frombuffer(raw, "uint8").reshape(-1, h, w, 3)
     a, b = best_loop(frames)
     picks = np.linspace(a, b, GRID * GRID, endpoint=False).astype(int)
-    keyed = [key(frames[i]) for i in picks]
+    keyed = [main_only(*key(frames[i])) for i in picks]
     box = None
     for _, al in keyed:
         c = al.point(lambda v: 255 if v > 60 else 0).getbbox()

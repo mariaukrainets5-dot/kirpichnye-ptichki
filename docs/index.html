@@ -609,7 +609,7 @@ vec3 c=mix(a.rgb*a.a,b.rgb*b.a,k)/al;c=mix(c,fogColor,smoothstep(fogNear,fogFar,
 function matOf(name){ // соседние кадры смешиваются, поэтому движение идёт плавно, без рывков
   if(!artMat[name]){
     artWait[name]=[];
-    const tex=loader.load(`art/s-${name}.webp?v=2`,t=>{artAspect[name]=t.image.width/t.image.height;artWait[name].forEach(fit);artWait[name]=[]});
+    const tex=loader.load(`art/s-${name}.webp?v=3`,t=>{artAspect[name]=t.image.width/t.image.height;artWait[name].forEach(fit);artWait[name]=[]});
     tex.anisotropy=4;
     artMat[name]=new THREE.ShaderMaterial({uniforms:{map:{value:tex},...FOG},vertexShader:SPRITE_VS,fragmentShader:SPRITE_FS,transparent:true,side:THREE.DoubleSide});
   }
@@ -635,7 +635,7 @@ function setFrame(g,a,b,k){
   const ge=g.plane.geometry;cellUV(ge.attributes.uv,a);cellUV(ge.attributes.uvB,b);
   const bl=ge.attributes.blend;for(let i=0;i<4;i++)bl.setX(i,k);bl.needsUpdate=true;
 }
-const LOOP={zayka:3.8,medved:2.9,slon:4.9,zhiraf:4.4,lisa:4.8,snegir:2.6,flamingo:4.3,pavlin:4.9,zhar:4.7,edinorog:4.3,drakon:4.6,hero:2.7,'barmaley-full':4.8}; // длина цикла ролика, секунды
+const LOOP={zayka:3.8,medved:2.9,slon:4.9,zhiraf:4.4,lisa:4.8,snegir:2.6,flamingo:4.3,pavlin:4.9,zhar:3.6,edinorog:4.3,drakon:4.6,hero:2.7,'barmaley-full':4.8}; // длина цикла ролика, секунды
 function tick(g,dt){g.ft+=dt*FRAMES/LOOP[g.art];const f=g.ft|0;setFrame(g,f%FRAMES,(f+1)%FRAMES,g.ft-f)}
 function turn(g,left){if(g.left===left)return;g.left=left;g.plane.scale.x=(left?1:-1)*g.w}
 function faceCamera(g){
@@ -1010,7 +1010,7 @@ function updateFriends(dt){
   const cx=Math.cos(S.yaw),sx=-Math.sin(S.yaw),pl=player.position;
   friends.forEach((f,n)=>{
     const u=f.u,dx=u.tx-f.position.x,dz=u.tz-f.position.z,d=Math.hypot(dx,dz),p=f.position;
-    f.visible=S.mode==='play'||S.mode==='menu'||p.distanceTo(camera.position)>15; // не загораживают главный момент
+    f.visible=S.mode==='play'||S.mode==='menu'||u.fixed; // в момент победы на сцене только спасённый
     tick(f,dt);
     if(u.fixed){faceCamera(f);return}
     if(d<.4){
