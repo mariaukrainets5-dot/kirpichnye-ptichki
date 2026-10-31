@@ -967,7 +967,7 @@ function joyRest(){ // в покое джойстик стоит внизу и �
 }
 let tap=null;
 const endPtr=e=>{
-  if(tap&&tap.id===e.pointerId&&e.type==='pointerup'&&S.mode==='forest'&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<14&&performance.now()-tap.t<400)forestTap(e.clientX,e.clientY);
+  if(tap&&tap.id===e.pointerId&&e.type==='pointerup'&&S.mode==='forest'&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<14&&performance.now()-tap.t<1000)forestTap(e.clientX,e.clientY);
   if(e.pointerId===joy.id)joyRest();if(drag&&e.pointerId===drag.id)drag=null;
 };
 canvas.addEventListener('pointerup',endPtr);canvas.addEventListener('pointercancel',endPtr);
