@@ -2,6 +2,7 @@
 """Turns the Higgsfield originals in art-src/ into game images in art/:
 cut-outs on transparency, animation sheets from the clips in art-src/video/ and resized story pictures."""
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -105,11 +106,11 @@ def sheet(name):
     print(name, f"loop {a/FPS:.1f}-{b/FPS:.1f}s", (fw, fh), (out / f"s-{name}.webp").stat().st_size // 1024, "KB")
 
 
-CHARACTERS = ("zayka", "medved", "slon", "zhiraf", "lisa", "snegir", "flamingo", "pavlin", "zhar", "edinorog", "drakon", "hero", "barmaley-full")
-for name in CHARACTERS:
+CHARACTERS = ("cherepaha", "osminog", "kozlik", "orlenok", "ezhik", "mysh", "koshey", "zayka", "medved", "slon", "zhiraf", "lisa", "snegir", "flamingo", "pavlin", "zhar", "edinorog", "drakon", "hero", "barmaley-full")
+for name in sys.argv[1:] or CHARACTERS:  # можно пересобрать только названных
     cutout(name)
     sheet(name)
-for name in ("flock", "barmaley", "kot", "hero-lego", "village", "bird", "tower"):
+for name in ("flock", "barmaley", "kot", "hero-lego", "village", "bird", "tower", "koshey-scene", "more", "gory", "peshera", "final"):
     img = Image.open(src / f"{name}.png").convert("RGB")
     img.thumbnail((1280, 1280), Image.LANCZOS)
     img.save(out / f"{name}.webp", quality=80, method=6)

@@ -81,7 +81,11 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);l
 .tool2:disabled img{filter:grayscale(1) opacity(.5)}
 .part{font-family:var(--display);font-weight:400;color:#fff;font-size:clamp(15px,3.6vw,20px);margin:6px 0 0;text-shadow:0 2px 4px rgba(0,0,0,.6)}
 .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:18px 12px;width:min(100%,900px);padding-top:8px}
-#houses{margin-bottom:auto}
+#ch2{margin-bottom:auto}
+#confirm{background:rgba(19,27,48,.82)}
+#confirmBox{--c:#fff;margin:auto 0;padding:22px;display:flex;flex-direction:column;align-items:center;gap:12px;width:min(100%,420px);text-align:center}
+#confirmBox h2{font-family:var(--display);font-weight:400;font-size:clamp(18px,4.6vw,24px);margin:0}
+#confirmBox p{margin:0;font-size:17px}
 #menu{background:rgba(19,27,48,.55)}
 #story{background:rgba(19,27,48,.82)}
 #storyBox{--c:#fff;margin:auto 0;padding:12px 12px 18px;display:flex;flex-direction:column;align-items:center;gap:12px;width:min(100%,720px)}
@@ -104,7 +108,7 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);l
 #winStars i{font-style:normal;color:#dfe4ec}
 .row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 @media (max-width:700px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));max-width:340px}
-  #cards .card:last-child{grid-column:1/-1;justify-self:center;width:calc(50% - 6px)}}
+  #cards .card:last-child,#ch2 .card:last-child{grid-column:1/-1;justify-self:center;width:calc(50% - 6px)}}
 </style>
 
 </head>
@@ -127,11 +131,24 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,7.2vw,58px);l
 <section id="menu" class="screen">
   <h1>Кирпичный лес</h1>
   <p class="lead">Злой колдун Бармалей превратил жителей волшебного леса в кирпичики. Собери всех, оживи и запри Бармалея в башне!</p>
-  <div class="row"><button id="taleBtn" class="brick big alt">Смотреть сказку</button><button id="forestBtn" class="brick big">Мой лес</button></div>
+  <div class="row"><button id="taleBtn" class="brick big alt">Смотреть сказку</button><button id="forestBtn" class="brick big">Мой лес</button><button id="resetBtn" class="brick big alt">Начать сначала</button></div>
   <h2 class="part">Спаси жителей леса</h2>
   <div id="cards" class="grid"></div>
   <h2 class="part">Построй домики и башню</h2>
   <div id="houses" class="grid"></div>
+  <h2 class="part">Глава 2: поход за Сердцем Леса</h2>
+  <div id="ch2" class="grid"></div>
+</section>
+
+<section id="confirm" class="screen" hidden>
+  <div id="confirmBox" class="brick">
+    <h2>Начать сначала?</h2>
+    <p>Все уровни и звёзды сбросятся, и сказка начнётся заново. Постройки в Моём лесу останутся.</p>
+    <div class="row">
+      <button id="resetYes" class="brick big">Да, сначала</button>
+      <button id="resetNo" class="brick big alt">Нет</button>
+    </div>
+  </div>
 </section>
 
 <section id="pick" class="screen" hidden>
@@ -463,16 +480,76 @@ const HOUSES=[
 {id:'bashnya',name:'Башня для Бармалея',theme:'night',catEvery:17,cats:2,boss:true,chunk:[6,5],build:tower,pal:{A:0xb5bccb,B:0x8f98a8,D:0x4a2d1c,G:0x2a2438,I:0x4a4f66,R:0xd7263d,Y:0xffc928}}
 ];
 HOUSES.forEach(h=>{if(h.home)h.home=ANIMALS.findIndex(a=>a.id===h.home)});
-const LEVELS=[...ANIMALS,...HOUSES],R_N=ANIMALS.length,TOWER=LEVELS.length-1;
+function ship(put){ // кирпичный корабль с парусом
+  for(let x=0;x<20;x++)for(let y=0;y<6;y++){
+    const end=Math.min(x,19-x),zl=Math.min(3,Math.floor(end/1.6)+Math.floor(y/2));
+    for(let z=-zl;z<=zl;z++){
+      if(y<5&&Math.abs(z)<zl&&y>0&&x>1&&x<18)continue;
+      put(x,y,z,y===5?'D':y===3?'W':'H');
+    }
+  }
+  for(let y=6;y<20;y++)put(10,y,0,'M');
+  for(let y=9;y<19;y++){const w=Math.floor((19-y)*.6)+1;for(let x=10-w;x<=10+w;x++)if(x!==10)put(x,y,1,(y%4<2)?'R':'S')}
+  for(let x=11;x<14;x++)for(let y=19;y<21;y++)put(x,y,0,'Y');
+}
+function bridge(put){ // арочный мост через пропасть
+  for(let x=0;x<22;x++){
+    const k=(x-10.5)/10.5,arch=Math.floor(5*(1-k*k));
+    for(let z=-2;z<=2;z++){
+      for(let y=arch;y<=6;y++)if(y>=arch&&(y>=5||Math.abs(k)>.82))put(x,y,z,y===6?'D':'P');
+      if(Math.abs(z)===2){put(x,7,z,x%3===0?'R':'A');if(x%3===0)put(x,8,z,'R')}
+    }
+  }
+}
+function chest(put){ // сундук Кощея с Сердцем Леса
+  for(let x=0;x<14;x++)for(let y=0;y<7;y++)for(let z=-4;z<=4;z++){
+    if(x>0&&x<13&&Math.abs(z)<4&&y>0&&y<6)continue;
+    put(x,y,z,y===3?'G':'B');
+  }
+  for(let k=0;k<3;k++)for(let x=0;x<14;x++)for(let z=-3+k;z<=3-k;z++)put(x,7+k,z,'R');
+  for(let x=6;x<8;x++)for(let y=3;y<7;y++)put(x,y,4,'Y');
+  [[5,11],[6,11],[7,11],[8,11],[6,10],[7,10],[5,12],[8,12]].forEach(([x,y])=>put(x,y,0,'H'));
+}
+const CH2=[
+{id:'cherepaha',name:'Черепашка',she:true,theme:'sea',catEvery:24,cats:1,pest:'Кот Кощея',chunk:[4,4],art:'cherepaha',tall:5.8,sing:[[500,.16,380],[420,.2,320]],
+ pal:{T:0x2f9a8f,D:0x1f6f73,C:0xf0e4b8,G:0x6fc9a8,K:0x20242e},
+ blobs:[[10,6,0,6,3.4,4.4,'T'],[8,8.4,1.6,1.4,.8,1.2,'D'],[12,8.4,1.6,1.4,.8,1.2,'D'],[10,3.6,0,5.4,1.6,3.8,'C'],[2.6,6,0,2.4,2,2,'G'],[1.8,6.8,1.5,.6,.7,.5,'K'],[6,2,3.6,2,1.2,1.4,'G'],[14,2,3.6,2,1.2,1.4,'G'],[17,5,0,1.2,.8,.8,'G']]},
+{id:'osminog',name:'Осьминожек',theme:'sea',catEvery:23,cats:1,pest:'Кот Кощея',chunk:[4,4],art:'osminog',tall:5.6,sing:[[700,.12,520],[520,.12,700]],
+ pal:{O:0xf4845f,P:0xf7a07f,K:0x20242e,W:0xfff1dc},
+ blobs:[[8,9,0,4.6,4.8,4,'O'],[4.6,10,2.4,.8,.9,.6,'K'],[3,2,0,1.3,2.6,1.3,'P'],[5,2,3.4,1.3,2.6,1.3,'P'],[9,2,4,1.3,2.6,1.3,'P'],[13,2,3,1.3,2.6,1.3,'P'],[14,2,0,1.3,2.6,1.3,'P']]},
+{id:'korabl',name:'Корабль',theme:'sea',item:true,taleAfter:'gory',panel:'more',done:'Корабль готов!',doneText:'Поднимаем парус. Вперёд, к горам!',catEvery:22,cats:1,pest:'Кот Кощея',chunk:[6,5],build:ship,pal:{H:0xb5763c,W:0xffffff,D:0xd9a066,M:0x7a5230,R:0xd7263d,S:0xffffff,Y:0xffc928}},
+{id:'kozlik',name:'Козлёнок',theme:'mountain',catEvery:22,cats:1,pest:'Кот Кощея',chunk:[5,4],art:'kozlik',tall:6.4,sing:[[640,.2,560],[560,.3,480]],singType:'sawtooth',
+ pal:{W:0xf6f2e8,P:0xf2c9b8,H:0xb09a7a,K:0x2a1c14,S:0xd9d3c5},
+ blobs:[[11,7,0,5.5,3,2.8,'W'],[6,10,0,1.6,2.6,1.5,'W'],[4,13,0,2.6,2,1.9,'W'],[1.8,12.2,0,1,.9,1,'P'],[3.6,13.8,1.6,.5,.6,.5,'K'],[5,16,1,.5,1.6,.5,'H'],[6,14,2.2,1,.5,.6,'W'],[7,3,2,1,4,1,'S'],[15,3,2,1,4,1,'S'],[17,9,0,.8,1.2,.8,'W']]},
+{id:'orlenok',name:'Орлёнок',bird:true,theme:'mountain',catEvery:21,cats:1,pest:'Кот Кощея',chunk:[4,4],art:'orlenok',tall:6.2,sing:[[1500,.14,1100],[1300,.22,900]],
+ pal:{B:0x8a5a2e,C:0xf0dfc0,W:0xf6efe0,Y:0xffc928,D:0x5e3b1e,K:0x20242e},
+ blobs:[[7,6,0,4,5,3.6,'B'],[5.4,5.6,0,2.4,3.6,2.6,'C'],[5.6,12,0,3,2.8,2.8,'W'],[2.2,11.4,0,1.4,.8,.9,'Y'],[4.6,12.8,2.2,.6,.7,.5,'K'],[8,6.5,3.4,3,3.6,.7,'D'],[12,3,0,2.4,1.4,1.6,'D'],[6,.8,1.6,.6,1.2,.6,'Y']]},
+{id:'most',name:'Мост',theme:'mountain',item:true,taleAfter:'peshera',panel:'gory',done:'Мост готов!',doneText:'Теперь можно перейти пропасть. Впереди пещера Кощея!',catEvery:20,cats:2,pest:'Кот Кощея',chunk:[6,4],build:bridge,pal:{D:0xb5763c,P:0x8f98a8,A:0xd9a066,R:0xd7263d}},
+{id:'ezhik',name:'Ёжик',theme:'cave',catEvery:20,cats:1,pest:'Кот Кощея',chunk:[4,4],art:'ezhik',tall:5.8,sing:[[900,.08,1100],[1100,.08,900],[950,.1,1200]],
+ pal:{S:0x7a5230,C:0xe8c9a0,K:0x2a1c14},
+ blobs:[[9,5,0,6,4.6,4,'S'],[5,4,0,3,3,3,'C'],[3,5,0,2.6,2.2,2.2,'C'],[.6,5,0,.6,.6,.6,'K'],[2.6,6,1.8,.6,.6,.5,'K'],[6,.8,2,1.4,.8,1,'C'],[11,.8,2,1.4,.8,1,'C']]},
+{id:'mysh',name:'Летучая мышка',she:true,bird:true,theme:'cave',catEvery:19,cats:2,pest:'Кот Кощея',chunk:[4,4],art:'mysh',tall:6.4,sing:[[2600,.08,2200],[2800,.08,2400],[2600,.1,2000]],
+ pal:{V:0x7c7396,D:0x5d5575,P:0xd9a6c0,K:0x20242e},
+ blobs:[[8,7,0,3.6,4.6,3,'V'],[7,13,0,3.2,2.8,2.8,'V'],[7.8,16.6,1.8,1,2,.6,'P'],[5,13.6,1.9,.6,.7,.5,'K'],[9,8,5,3.6,4,.6,'D'],[7,1,1.4,.7,1,.7,'D']]},
+{id:'sunduk',name:'Сундук Кощея',theme:'cave',item:true,boss:true,final:true,bossArt:'koshey',bossName:'Кощей',bossHint:'Собери сундук! Кощей будет мешать: гони его прочь!',panel:'peshera',done:'Сундук открыт!',doneText:'Сердце Леса снова у нас, а Кощей потерял всю силу!',catEvery:16,cats:2,pest:'Кот Кощея',chunk:[6,4],build:chest,pal:{B:0x8a5a2e,G:0xffc928,R:0x6b3f22,Y:0xffe27a,H:0xe2332b}}
+];
+const LEVELS=[...ANIMALS,...HOUSES,...CH2],R_N=ANIMALS.length,TOWER=R_N+HOUSES.length-1,LAST=LEVELS.length-1;
+const CREATURES=LEVELS.filter(l=>l.art),isSaved=a=>!!save.stars[LEVELS.indexOf(a)];
+const pest=c=>c.boss?(S.bird.bossName||'Бармалей'):(S.bird.pest||'Кот Бандит');
 const SKILLS={
  zayka:'С ним ты бегаешь быстрее',snegir:'Показывает все детальки',medved:'Сторожит: кот раскидает только одну деталь',
  flamingo:'Достаёт детальки издалека',slon:'Несёт 7 деталек вместо 4',pavlin:'Пугает хвостом: вредители бегут медленнее',
  zhiraf:'Видит вредителя заранее',edinorog:'Сам наколдует детальку на подставку',lisa:'Хитрит: вредитель приходит реже',
- drakon:'Отпугивает вредителя издалека',zhar:'Раскиданные детальки сами летят назад'
+ drakon:'Отпугивает вредителя издалека',zhar:'Раскиданные детальки сами летят назад',
+ cherepaha:'Один раз закроет подставку панцирем',osminog:'Закидывает детальки на подставку издалека',kozlik:'Прощает один налёт: звёзды целее',
+ orlenok:'Показывает остров с высоты',ezhik:'Несёт 6 деталек на колючках',mysh:'Детальки сами тянутся к тебе'
 };
 const FOREST={id:'les',theme:'garden',cats:0,free:true,pal:{},bricks:[],chunks:[],rows:1,cols:1,unit:.6};
 
 const THEMES={
+ sea:{sky:0x8fd8f0,a:0xf4dcae,b:0xeccd95,water:0x2f9fd6,waterMore:true,plinth:0x1f6fd1,hemi:.95,sun:.8,decor:['palm','rock','reed']},
+ mountain:{sky:0xc9dcf0,a:0xb9bfca,b:0xa6adba,plinth:0x8a5a2e,hemi:.9,sun:.75,decor:['rock','boulder','fir']},
+ cave:{sky:0x140f2a,a:0x3b2f45,b:0x2f2538,plinth:0x7a5fd0,hemi:.75,sun:.5,dark:true,decor:['crystal','crystal','stalag','rock']},
  snow:{sky:0xbfd9f2,a:0xf6fafd,b:0xe2ecf6,plinth:0x5b7fa6,hemi:.95,sun:.75,decor:['fir','fir','rock']},
  jungle:{sky:0x9be6cf,a:0x45b35a,b:0x389f4d,plinth:0xb5763c,hemi:.9,sun:.8,decor:['palm','round','flower','flower']},
  lagoon:{sky:0xffd5bd,a:0xf4dcae,b:0xeccd95,water:0x43bcd8,plinth:0xe8a23c,hemi:.95,sun:.8,decor:['palm','reed','reed','rock']},
@@ -617,8 +694,8 @@ const WIN={burst:1.1,bird:1.45,panel:5.6}; // тайминги превраще�
 const soft=(a,b,x)=>{const t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t)};
 const lerp=(a,b,k)=>a+(b-a)*k;
 function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);return new THREE.CanvasTexture(c)}
-const SHEETS=['zayka','medved','slon','zhiraf','lisa','snegir','flamingo','pavlin','zhar','edinorog','drakon','hero','barmaley-full'];
-const ART=[...SHEETS,'bird','flock','barmaley','kot','hero-lego','village','tower'];
+const SHEETS=['cherepaha','osminog','kozlik','orlenok','ezhik','mysh','koshey','zayka','medved','slon','zhiraf','lisa','snegir','flamingo','pavlin','zhar','edinorog','drakon','hero','barmaley-full'];
+const ART=[...SHEETS,'bird','flock','barmaley','kot','hero-lego','village','tower','koshey-scene','more','gory','peshera','final'];
 ART.forEach(n=>{new Image().src=`art/${n}.webp`}); // заранее, чтобы работало и без интернета
 const GRID=8,FRAMES=GRID*GRID,FOOT=.027; // FOOT: пустая кромка под ногами на листе
 const loader=new THREE.TextureLoader(),artMat={},artAspect={},artWait={};
@@ -659,7 +736,7 @@ function setFrame(g,a,b,k){
   const ge=g.plane.geometry;cellUV(ge.attributes.uv,a);cellUV(ge.attributes.uvB,b);
   const bl=ge.attributes.blend;for(let i=0;i<4;i++)bl.setX(i,k);bl.needsUpdate=true;
 }
-const LOOP={zayka:3.8,medved:2.9,slon:4.9,zhiraf:4.4,lisa:4.8,snegir:2.6,flamingo:4.3,pavlin:4.9,zhar:3.6,edinorog:4.3,drakon:4.6,hero:2.7,'barmaley-full':4.8}; // длина цикла ролика, секунды
+const LOOP={cherepaha:4.6,osminog:2.6,kozlik:4.4,orlenok:2.9,ezhik:2.5,mysh:2.7,koshey:2.6,zayka:3.8,medved:2.9,slon:4.9,zhiraf:4.4,lisa:4.8,snegir:2.6,flamingo:4.3,pavlin:4.9,zhar:3.6,edinorog:4.3,drakon:4.6,hero:2.7,'barmaley-full':4.8}; // длина цикла ролика, секунды
 function tick(g,dt){g.ft+=dt*FRAMES/LOOP[g.art];const f=g.ft|0;setFrame(g,f%FRAMES,(f+1)%FRAMES,g.ft-f)}
 function turn(g,left){if(g.left===left)return;g.left=left;g.plane.scale.x=(left?1:-1)*g.w}
 function faceCamera(g){
@@ -685,6 +762,9 @@ const DECOR={
  rock:(x,z,it)=>{it.push(box(2.2,1,1.8,x,.5,z,0x8f98a8),box(1.3,.8,1.2,x+.2,1.4,z,0xa3acbb));return 1.3},
  hedge:(x,z,it)=>{it.push(box(3.6,1.4,1.2,x,.7,z,0x2c8d48),box(3.4,.3,1,x,1.5,z,0x3cab5c));return 1.7},
  mushroom:(x,z,it,t,r)=>{const c=r()<.5?0xff5d8f:0x3fd0d6;it.push(box(.6,1.1,.6,x,.55,z,0xf2ead6),box(2,.5,2,x,1.3,z,c),box(1.2,.4,1.2,x,1.7,z,c),box(.3,.05,.3,x+.5,1.57,z+.4,0xffffff));return .8},
+ crystal:(x,z,it,t,r)=>{const c=[0x5fd3ff,0xb98cff,0xff8ad1][r()*3|0];it.push(box(.9,2.4,.9,x,1.2,z,c),box(.6,1.5,.6,x+.7,.75,z+.3,c),box(.5,1,.5,x-.6,.5,z-.4,c));return 1},
+ stalag:(x,z,it)=>{[[1.8,1.2],[1.3,2.6],[.8,3.8],[.4,4.8]].forEach(([q,y])=>it.push(box(q,1.4,q,x,y-.3,z,0x5a4a63)));return 1.1},
+ boulder:(x,z,it)=>{it.push(box(3,1.8,2.6,x,.9,z,0x8f98a8),box(2,1.4,1.8,x+.3,2.5,z,0xa3acbb),box(1.8,.3,1.6,x+.3,3.3,z,0xffffff));return 1.8},
  lantern:(x,z,it)=>{it.push(box(.3,3,.3,x,1.5,z,0x4a4f66),box(.9,.9,.9,x,3.4,z,0xffe27a));return .5}
 };
 
@@ -693,7 +773,7 @@ const save={stars:[],hero:false,intro:false,forest:[]};
 try{Object.assign(save,JSON.parse(localStorage.getItem('kirpich-les-v1')||'{}'))}catch(e){}
 const persist=()=>{try{localStorage.setItem('kirpich-les-v1',JSON.stringify(save))}catch(e){}};
 const S={mode:'menu',lvl:0,bird:null,bricks:[],carried:[],cats:[],hits:0,shoos:0,yaw:0,camD:21,camH:15,time:0,dropCd:0,winT:0};
-const cap=()=>S.helper==='slon'?7:4;
+const cap=()=>S.helper==='slon'?7:S.helper==='ezhik'?6:4;
 let world=new THREE.Group();scene.add(world);
 let obstacles=[],friends=[],winBird=null,ghost=null;
 
@@ -715,8 +795,8 @@ function makePlayer(){
   g.armL.geometry.translate(0,-.2,0);g.armR.geometry.translate(0,-.2,0);g.armL.position.y=g.armR.position.y=1.42;
   return g;
 }
-function makeCat(){
-  const O=0xf08a24,D=0xc9650f,K=0x1d2433,W=0xfff1dc,g=new THREE.Group();
+function makeCat(dark){
+  const O=dark?0x565c74:0xf08a24,D=dark?0x363a4d:0xc9650f,K=0x1d2433,W=0xfff1dc,g=new THREE.Group();
   const body=new THREE.Mesh(bake([box(1.5,.8,.8,0,1,0,O),box(.3,.82,.82,.3,1,0,D),box(.3,.82,.82,-.25,1,0,D),
     box(.9,.8,.86,-1,1.4,0,O),box(.86,.24,.9,-1,1.5,0,K),box(.2,.16,.92,-1.08,1.5,-.0,W),
     box(.2,.34,.16,-1.2,1.92,.28,O),box(.2,.34,.16,-1.2,1.92,-.28,O),box(.2,.2,.3,-1.5,1.22,0,W)]),MAT);
@@ -750,7 +830,7 @@ function buildWorld(i){
   const m=new THREE.Matrix4(),c=new THREE.Color();
   tiles.forEach(([x,z],n)=>{
     const wave=Math.sin(x*.21+1)*Math.cos(z*.17)+Math.sin((x+z)*.09);
-    const inWater=t.water&&(Math.hypot(x+15,z+12)<8.5||Math.hypot(x-17,z+8)<6||Math.hypot(x+14,z-15)<5.5);
+    const inWater=t.water&&((t.waterMore&&Math.hypot(x,z)>19)||Math.hypot(x+15,z+12)<8.5||Math.hypot(x-17,z+8)<6||Math.hypot(x+14,z-15)<5.5);
     c.set(inWater?t.water:(wave>.15?t.a:t.b));
     if(rand()<.1)c.offsetHSL(0,0,-.018);
     m.makeScale(T-.03,1.6,T-.03);m.setPosition(x,-.8,z);tileM.setMatrixAt(n,m);tileM.setColorAt(n,c);
@@ -787,7 +867,7 @@ function buildWorld(i){
   // Облака
   const cl=[];for(let n=0;n<16;n++){const a=rand()*6.28,r=36+rand()*40,x=Math.cos(a)*r,z=Math.sin(a)*r,y=10+rand()*22,s=3+rand()*5;
     cl.push(box(s*2,1.2,s,x,y,z,0xffffff),box(s,1,s*.7,x+.8,y+1,z,0xffffff))}
-  const cm=new THREE.Mesh(bake(cl),new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:t.stars?.1:.85}));cm.userData.temp=true;world.add(cm);
+  const cm=new THREE.Mesh(bake(cl),new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:t.stars||t.dark?.1:.85}));cm.userData.temp=true;world.add(cm);
 
   // Призрак птицы: подсказка, что где стоит
   const u=b.unit,g=[];
@@ -806,18 +886,19 @@ function buildWorld(i){
 
   // Последние спасённые гуляют по острову (всех сразу телефон не потянет)
   if(!b.free){
-    ANIMALS.filter((a,n)=>save.stars[n]&&n!==i&&n!==b.home&&a.id!==S.helper).slice(-5).forEach(a=>addFriend(a,rand));
-    const h=ANIMALS.find(a=>a.id===S.helper);
+    CREATURES.filter(a=>isSaved(a)&&a!==b&&a!==ANIMALS[b.home]&&a.id!==S.helper).slice(-5).forEach(a=>addFriend(a,rand));
+    const h=CREATURES.find(a=>a.id===S.helper);
     if(h){const f=addFriend(h);f.u.follow=true;f.position.set(2,0,11)}
   }
 
   for(let n=0;n<b.cats;n++){
-    const boss=b.boss&&n===0,mesh=boss?makeSprite('barmaley-full',6.2):makeCat();
+    const boss=b.boss&&n===0,mesh=boss?makeSprite(b.bossArt||'barmaley-full',6.2):makeCat(!!b.pest);
     if(boss){mesh.visible=false;scene.add(mesh)}
     S.cats.push({mesh,boss,state:'wait',timer:(14+n*9)*(S.helper==='lisa'?1.6:1),t:0,dir:0});
   }
   player.position.set(0,0,9.5);player.rotation.y=0;player.visible=true;
   S.yaw=0;S.camD=Math.min(28,Math.max(19,b.rows*b.unit*2+9));S.camH=S.camD*.72;
+  if(S.helper==='orlenok'){S.camD*=1.35;S.camH*=1.35}
   camFocus.set(0,0,9.5);
 }
 const markGeo=new THREE.ConeGeometry(.5,1,4);markGeo.rotateX(Math.PI);
@@ -938,13 +1019,14 @@ function toSlot(o){ // деталь летит на своё место
   o.mesh.scale.setScalar(1);
 }
 function scatter(cat){
+  if(S.helper==='cherepaha'&&!S.shield){S.shield=true;toast('Черепашка закрыла подставку панцирем!');burst(0,S.baseY+2,0,[0x2f9a8f,0xffffff],14,5);return}
   const placed=S.bricks.filter(b=>b.state==='placed').sort((a,b)=>b.slot.y-a.slot.y);
   const n=Math.min(placed.length,S.helper==='medved'?1:2+Math.min(S.lvl,2)),pool=placed.slice(0,Math.max(n,Math.ceil(placed.length*.5)));
   for(let i=0;i<n;i++){
     const o=pool.splice(Math.random()*pool.length|0,1)[0],s=freeSpot(Math.random);
     flyTo(o,s.x,o.gy,s.z,.9+Math.random()*.4,7+Math.random()*4,()=>{o.state='ground';o.x=s.x;o.z=s.z;o.mesh.rotation.set(0,Math.random()*3,0);if(S.helper==='zhar')o.back=S.time+5});
   }
-  if(n){S.hits++;sfx.scatter();toast(cat.boss?'Бармалей раскидал детальки! Собирай заново.':'Бандит раскидал детальки! Собирай заново.',true);burst(0,S.baseY+2,0,[0xffffff,0xffc928],16,7);drawHud()}
+  if(n){S.hits++;sfx.scatter();toast(`${pest(cat)} раскидал детальки! Собирай заново.`,true);burst(0,S.baseY+2,0,[0xffffff,0xffc928],16,7);drawHud()}
 }
 function updateCat(c,dt){
   c.t+=dt;const m=c.mesh,p=m.position;
@@ -957,7 +1039,7 @@ function updateCat(c,dt){
     if(c.timer<=0){
       if(S.bricks.filter(b=>b.state==='placed').length<2){c.timer=3;return}
       const a=Math.random()*6.28;p.set(Math.cos(a)*(R_WORLD-1),0,Math.sin(a)*(R_WORLD-1));m.visible=true;if(!c.boss)m.rotation.y=Math.atan2(-p.z,p.x);
-      c.state='peek';c.t=0;c.den=a;c.boss?sfx.grumble():sfx.meow();toast(c.boss?'Бармалей идёт! Не дай ему сломать башню!':'Кот Бандит идёт! Беги и прогони его!',true);
+      c.state='peek';c.t=0;c.den=a;c.boss?sfx.grumble():sfx.meow();toast(`${pest(c)} идёт! Беги и прогони его!`,true);
     }
   }else if(c.state==='peek'){
     p.y=Math.abs(Math.sin(c.t*9))*.35;if(c.t>(S.helper==='zhiraf'?4.5:1.4)){p.y=0;c.state='run'}
@@ -971,7 +1053,7 @@ function updateCat(c,dt){
     if(go(tx,tz,10)<1||c.t>7){m.visible=false;c.state='wait';c.timer=S.bird.catEvery*(.85+Math.random()*.3)*(S.helper==='lisa'?1.6:1)}
   }
   if((c.state==='run'||c.state==='peek')&&Math.hypot(p.x-player.position.x,p.z-player.position.z)<(S.helper==='drakon'?7:2.1)){
-    p.y=0;c.state='flee';c.t=0;c.den=Math.atan2(p.z,p.x);S.shoos++;sfx.shoo();toast(c.boss?'Бармалей убежал! Строй скорее!':'Кыш! Кот Бандит убежал!');
+    p.y=0;c.state='flee';c.t=0;c.den=Math.atan2(p.z,p.x);S.shoos++;sfx.shoo();toast(`Кыш! ${pest(c)} убежал!`);
     burst(p.x,1.2,p.z,[0xf08a24,0xffffff,0xffc928],14,5);
   }
 }
@@ -999,6 +1081,7 @@ function updateBricks(dt){
     if(o.state==='ground'){
       m.position.set(o.x,o.gy+Math.sin(S.time*2.4+o.phase)*.12,o.z);m.rotation.y+=dt*1.1;
       if(S.mode==='play'&&S.carried.length<cap()&&Math.hypot(o.x-p.x,o.z-p.z)<(S.helper==='flamingo'?5:2.2))pickUp(o);
+      if(S.helper==='mysh'&&S.mode==='play'){const dx=p.x-o.x,dz=p.z-o.z,e=Math.hypot(dx,dz);if(e<10&&e>.1){o.x+=dx/e*3*dt;o.z+=dz/e*3*dt}}
       if(o.back&&S.time>o.back&&S.mode==='play'){o.back=0;o.mesh.scale.setScalar(1);toSlot(o)}
       if(o.mark){o.mark.visible=true;o.mark.position.set(o.x,o.gy+1.7+Math.sin(S.time*5+o.phase)*.25,o.z);o.mark.rotation.y=S.time*2}
     }else if(o.state==='fly'){
@@ -1017,7 +1100,7 @@ function updateBricks(dt){
     o.mesh.position.set(p.x,y+Math.sin(S.time*9)*.02,p.z);y+=hh/2+.05;
   });
   S.dropCd-=dt;
-  if(S.mode==='play'&&S.carried.length&&Math.hypot(p.x,p.z)<R_PLINTH+1.7&&S.dropCd<=0){S.dropCd=.15;dropOne()}
+  if(S.mode==='play'&&S.carried.length&&Math.hypot(p.x,p.z)<R_PLINTH+(S.helper==='osminog'?7:1.7)&&S.dropCd<=0){S.dropCd=.15;dropOne()}
 }
 function updateArrow(){
   if(S.mode!=='play'){arrow.visible=false;return}
@@ -1096,7 +1179,7 @@ function startWin(){
   player.visible=false;heroSprite.visible=false; // главный момент принадлежит спасённому
   S.cats.forEach(c=>{c.mesh.visible=false;c.state='gone'});
   sfx.win();
-  const stars=S.hits===0?3:S.hits<=2?2:1;
+  const hits=Math.max(0,S.hits-(S.helper==='kozlik'?1:0)),stars=hits===0?3:hits<=2?2:1;
   save.stars[S.lvl]=Math.max(save.stars[S.lvl]||0,stars);persist();
   $('hud').hidden=$('hands').hidden=$('keys').hidden=true;
   S.pendingStars=stars;
@@ -1108,7 +1191,8 @@ function showPanel(img,title,stars,text,btn){
 }
 function showWin(){
   const b=S.bird,stars=S.pendingStars,hint=stars<3?'Гони вредителя раньше, чем он прыгнет на подставку, и будет три звезды.':'Никто не добрался до подставки!';
-  if(b.boss)showPanel('art/barmaley-full.webp','Бармалей заточён!',stars,'Теперь он никого не заколдует. Лес свободен!','Конец сказки');
+  if(b.item)showPanel(`art/${b.panel}.webp`,b.done,stars,b.doneText,'Дальше');
+  else if(b.boss)showPanel('art/barmaley-full.webp','Бармалей заточён!',stars,'Теперь он никого не заколдует. Но что это за холодный ветер?','Дальше');
   else if(b.build){
     const a=ANIMALS[b.home],last=S.lvl===TOWER-1;
     showPanel(`art/${a.art}.webp`,`${a.name} дома!`,stars,last?'Все домики готовы. Осталось поймать Бармалея: построй для него башню!':hint,'Дальше');
@@ -1126,6 +1210,20 @@ function flash(t,cy){
 }
 function updateWin(dt){
   S.winT+=dt;const b=S.bird,t=S.winT,prev=t-dt,hit=x=>prev<x&&t>=x,cy=S.baseY+b.rows*b.unit*.45,cols=Object.values(b.pal);
+  if(b.item){ // постройка готова; в финале Кощей теряет силу
+    if(t<1.4&&Math.random()<.5)burst((Math.random()-.5)*9,S.baseY+Math.random()*6,(Math.random()-.5)*5,[...cols,0xffffff],3,5);
+    if(hit(.5))ghost.visible=false;
+    if(b.final){
+      if(hit(.8)){winBird=makeSprite('koshey',6.2);world.add(winBird);winBird.position.set(0,0,R_PLINTH+3);sfx.grumble()}
+      if(winBird){
+        const k=soft(1.6,3.2,t);winBird.scale.setScalar(Math.max(.02,1-k));tick(winBird,dt);faceCamera(winBird);
+        if(hit(1.6))sfx.magic();
+        if(hit(3.2)){sfx.win();burst(0,3,R_PLINTH+3,[0xe2332b,0xffffff,0xffc928],70,9);winBird.visible=false}
+      }
+    }
+    if(t>(b.final?4.6:3)&&$('win').hidden)showWin();
+    return;
+  }
   if(b.boss){ // Бармалея затягивает в башню, и он остаётся за решёткой
     if(t<1.2&&Math.random()<.5)burst((Math.random()-.5)*9,S.baseY+Math.random()*9,(Math.random()-.5)*5,cols,3,5);
     if(hit(.5))ghost.visible=false;
@@ -1212,7 +1310,14 @@ const TALE={
   ['hero-lego','Колдовство задело и тебя: ты тоже кирпичный! Но только ты можешь всех спасти. Собери их и оживи!']],
  end:[['tower','Бармалей заперт в высокой кирпичной башне. Оттуда ему не выбраться, и больше он никого не заколдует!'],
   ['village','В лесу снова поют птицы, а у всех зверят есть свои домики.'],
-  ['kot','Кот Бандит понял, что с друзьями веселее, и больше ничего не разбрасывает. А теперь весь лес твой: строй что хочешь!']]
+  ['kot','Кот Бандит понял, что с друзьями веселее, и больше ничего не разбрасывает.'],
+  ['koshey-scene','Но вдруг подул ледяной ветер! Это Кощей, дядя Бармалея. Он украл Сердце Леса, и лес начал замерзать!'],
+  ['more','Надо вернуть Сердце. Дорога лежит через море, горы и пещеру. А в меню открылся Мой лес: там можно строить что хочешь!']],
+ gory:[['gory','Корабль доплыл! Впереди снежные горы и глубокая пропасть. Спаси горных жителей и построй мост.']],
+ peshera:[['peshera','За мостом пещера Кощея. Где-то здесь его сундук с Сердцем Леса. Собери его!']],
+ final:[['final','Сердце Леса вернулось домой! Лёд растаял, и лес зацвёл как никогда.'],
+  ['koshey-scene','Кощей потерял всю силу и улетел на край света. Больше он сюда не сунется.'],
+  ['village','Все жители леса вместе празднуют, а твой лес ждёт тебя в меню. Строй, играй и возвращайся!']]
 };
 let taleQueue=[],taleDone=null;
 function tale(name,done){
@@ -1232,8 +1337,8 @@ function thumb(b,cv,locked){
 function showPick(i){ // перед уровнем выбираем, кого взять с собой
   S.mode='pick';$('menu').hidden=$('win').hidden=true;$('pick').hidden=false;
   const box=$('pickGrid');box.innerHTML='';
-  ANIMALS.forEach((a,n)=>{
-    if(!save.stars[n]||n===i)return;
+  CREATURES.forEach(a=>{
+    if(!isSaved(a)||a===LEVELS[i])return;
     const b=document.createElement('button');b.className='card brick';
     b.innerHTML=`<img src="art/${a.art}.webp" alt=""><b>${a.name}</b><span class="skill">${SKILLS[a.id]}</span>`;
     b.onclick=()=>{audio();$('pick').hidden=true;S.helper=a.id;startLevel(i)};box.appendChild(b);
@@ -1250,7 +1355,8 @@ const TOOLS=[
  {id:'mushroom',kind:'decor',name:'Гриб',need:20},{id:'lantern',kind:'decor',name:'Фонарь',need:25},
  {id:'palm',kind:'decor',name:'Пальма',need:30},{id:'fir',kind:'decor',name:'Ёлка',need:35},
  ...HOUSES.filter(h=>!h.boss).map(h=>({id:'h'+h.id,kind:'house',name:h.name.replace('Домик ',''),lvl:LEVELS.indexOf(h)})),
- ...ANIMALS.map(a=>({id:'a'+a.id,kind:'animal',name:a.name,a})),
+ {id:'crystal',kind:'decor',name:'Кристалл',need:40},
+ ...CREATURES.map(a=>({id:'a'+a.id,kind:'animal',name:a.name,a})),
  {id:'erase',kind:'erase',name:'Убрать'}
 ];
 const toolGeo={};let things=[],occ=new Map(),tool=TOOLS[0];
@@ -1318,7 +1424,7 @@ function forestTap(sx,sy){
 function renderBar(){
   const box=$('forestBar'),got=starsTotal();box.innerHTML='';
   TOOLS.forEach(t=>{
-    const locked=(t.need&&got<t.need)||(t.kind==='animal'&&!save.stars[ANIMALS.indexOf(t.a)]);
+    const locked=(t.need&&got<t.need)||(t.kind==='animal'&&!isSaved(t.a));
     const b=document.createElement('button');b.className='tool2'+(t===tool?' on':'');b.disabled=!!locked;
     b.innerHTML=(t.kind==='block'?`<i style="background:#${t.c.toString(16).padStart(6,'0')}"></i>`:t.kind==='animal'?`<img src="art/${t.a.art}.webp" alt="">`:'')+`<span>${locked&&t.need?'★ '+t.need:t.name}</span>`;
     b.onclick=()=>{audio();tool=t;renderBar()};box.appendChild(b);
@@ -1334,7 +1440,7 @@ function openForest(){
 }
 function isOpen(i){return i===0||!!save.stars[i-1]}
 function renderCards(){
-  [['cards',ANIMALS,0],['houses',HOUSES,R_N]].forEach(([id,list,from])=>{
+  [['cards',ANIMALS,0],['houses',HOUSES,R_N],['ch2',CH2,TOWER+1]].forEach(([id,list,from])=>{
     const box=$(id);box.innerHTML='';
     list.forEach((b,n)=>{
       const i=from+n,open=isOpen(i),got=save.stars[i]||0,btn=document.createElement('button');
@@ -1349,7 +1455,7 @@ function renderCards(){
 function openLevel(i){
   if(i===0&&!save.intro){save.intro=true;persist();tale('intro',()=>startLevel(0));return}
   if(i>=R_N&&!save.hero){startWake();return}
-  if(ANIMALS.some((a,n)=>save.stars[n]&&n!==i))showPick(i);else{S.helper=null;startLevel(i)}
+  if(CREATURES.some(a=>isSaved(a)&&a!==LEVELS[i]))showPick(i);else{S.helper=null;startLevel(i)}
 }
 function showMenu(){
   S.mode='menu';S.helper=null;joyRest();$('toast').className='';$('forestBar').hidden=true;$('pick').hidden=true;
@@ -1359,22 +1465,30 @@ function showMenu(){
   const open=!!save.stars[TOWER],fb=$('forestBtn');fb.disabled=!open;fb.textContent=open?'Мой лес':'Мой лес откроется после башни';
 }
 function startLevel(i){
-  S.mode='play';S.magicT=0;$('status').hidden=false;$('forestBar').hidden=true;buildWorld(i);player.visible=true;setHero(save.hero);heroSprite.scale.setScalar(1);player.position.y=0;
+  S.mode='play';S.magicT=0;S.shield=false;$('status').hidden=false;$('forestBar').hidden=true;buildWorld(i);player.visible=true;setHero(save.hero);heroSprite.scale.setScalar(1);player.position.y=0;
   $('menu').hidden=$('win').hidden=true;$('hud').hidden=$('hands').hidden=false;$('keys').hidden=touchDevice;
   joyRest();drawHud();drawHands();
   const b=S.bird;
   toast(i===0?(touchDevice?'Води пальцем по экрану, чтобы бежать. Неси детальки на подставку!':'Подбирай детальки и неси на подставку. За раз можно взять 4.'):
-    b.boss?'Построй башню! Бармалей попробует её сломать: гони его прочь!':b.build?`Построй: ${b.name}! Кот Бандит всё ещё хулиганит.`:`Спаси: ${b.name}! Жёлтая стрелка покажет, куда бежать.`,false,4);
+    b.boss?(b.bossHint||'Построй башню! Бармалей попробует её сломать: гони его прочь!'):b.build?`Построй: ${b.name}! Кот Бандит всё ещё хулиганит.`:`Спаси: ${b.name}! Жёлтая стрелка покажет, куда бежать.`,false,4);
   setTimeout(()=>{if(S.mode==='play')$('keys').hidden=true},9000);
 }
 $('menuBtn').onclick=showMenu;
 $('winMenuBtn').onclick=showMenu;
 $('taleBtn').onclick=()=>{audio();tale('intro',showMenu)};
 $('forestBtn').onclick=()=>{audio();openForest()};
+$('resetBtn').onclick=()=>{audio();$('confirm').hidden=false};
+$('resetNo').onclick=()=>{$('confirm').hidden=true};
+$('resetYes').onclick=()=>{ // постройки в Моём лесу остаются
+  save.stars=[];save.hero=false;save.intro=false;persist();$('confirm').hidden=true;showMenu();
+  toast('Начинаем сначала!');
+};
 $('nextBtn').onclick=()=>{
   if(S.mode==='wakeDone')openLevel(R_N);
   else if(S.lvl===R_N-1&&!save.hero)startWake();
-  else if(S.lvl===TOWER)tale('end',openForest);
+  else if(S.lvl===TOWER)tale('end',()=>openLevel(TOWER+1));
+  else if(S.lvl===LAST)tale('final',showMenu);
+  else if(S.bird.taleAfter)tale(S.bird.taleAfter,()=>openLevel(S.lvl+1));
   else openLevel(S.lvl+1);
 };
 function drawSound(){$('soundBtn').textContent=soundOn?'🔊':'🔇'}
@@ -1413,7 +1527,7 @@ function step(dt){
   updateBricks(dt);updateArrow();updateCamera(dt);updateFriends(dt);updateHero();updateParticles(dt);
   renderer.render(scene,camera);
 }
-window.__kp={S,LEVELS,R_N,TOWER,obstacles:()=>obstacles,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,openForest,forestTap,openLevel,TOOLS,setTool:t=>{tool=t;renderBar()},things:()=>things,camera,friends:()=>friends};
+window.__kp={S,LEVELS,R_N,TOWER,LAST,obstacles:()=>obstacles,startLevel,keys,player,save,step,joy,startWin,startWake,showMenu,openForest,forestTap,openLevel,TOOLS,setTool:t=>{tool=t;renderBar()},things:()=>things,camera,friends:()=>friends};
 showMenu();
 requestAnimationFrame(frame);
 </script>
